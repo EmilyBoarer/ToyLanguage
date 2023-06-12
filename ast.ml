@@ -6,6 +6,14 @@ type types =
     | IDENT_T
     (* if type list is empty -> not typeable *)
 
+type infix_operations =
+    | I_ADD
+    | I_SUB
+    | I_MULT
+    | I_DIV
+    | I_LSHIFT
+    | I_RSHIFT
+
 type ast =
     | LET of ast * ast * ast (* let x:u32 = 5 *)
     | DECLARE of ast * ast   (* let x:u32 *)
@@ -14,7 +22,7 @@ type ast =
     | INT of int             (* 5 *)
     | IDENT of string        (* x *)
     | TYPE_IDENT of types    (* u32 *)
-(*    | OP2 of ast * ast *)
+    | INFIX of ast * infix_operations * ast     (* x+3  or   a<<1   etc..*)
     | PRINT of ast           (* print thing  -- prints the value returned by thing *)
 
 (* TODO: product and sum types (structs and enums) *)
@@ -32,6 +40,7 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs *)
                     let t2 = match (simplify_ast (SEQ(t))) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in
                     SEQ(h2@t2)
     | ASSIGN (ast1, ast2) -> ASSIGN (ast1, simplify_ast ast2)
+    | INFIX (ast1, ast2, ast3) -> INFIX(simplify_ast ast1, ast2, simplify_ast ast3)
     | x -> x
 
 type var_type = VT of string * (types list)
@@ -92,6 +101,18 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
     | PRINT (thing), vt -> let ts, _ = type_check (thing, vt) in
                            if intersection ([U32_T; I32_T], ts) = [] then [], vt
                                                                      else [UNIT_T], vt
+    | INFIX (ast1, op, ast2), vt -> (match op with
+        | I_ADD | I_SUB | I_MULT | I_DIV -> let ts1, _ = type_check (ast1, vt) in
+                                            let ts2, _ = type_check (ast2, vt) in
+                                            let i1 = intersection ([U32_T; I32_T], ts1) in
+                                            let i2 = intersection (ts1, ts2) in
+                                            if i1 = [] then [], vt else if i2 = [] then [], vt else i2, vt
+        | I_LSHIFT | I_RSHIFT            -> let ts1, _ = type_check (ast1, vt) in
+                                            let ts2, _ = type_check (ast2, vt) in
+                                            let i1 = intersection ([U32_T; I32_T], ts1) in
+                                            let i2 = intersection ([U32_T], ts2) in
+                                            if i1 = [] then [], vt else if i2 = [] then [], vt else i1, vt
+    )
     | _, vt -> [], vt
 
 
@@ -99,8 +120,8 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 
 (*TODO check each variable is assigned only 1 type in the end! - or at least pick one!*)
 
-(* equivalent to program:  {let x:u32 = 7; print x} *)
+(* equivalent to program:  {let x:u32 = 7; x+3} *)
 let run = simplify_then_type_check ( SEQ([
-                                            LET(IDENT("x"), TYPE_IDENT(U32_T), INT(7));
-                                            PRINT(IDENT("x"))
+                                            LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7));
+                                            INFIX(IDENT("x"), I_LSHIFT, INT(3))
                                      ]) )
