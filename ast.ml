@@ -31,10 +31,8 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs *)
     | SEQ (h::t) -> let h2 = match (simplify_ast h) with SEQ(h2) -> h2 | h2 -> [h2] in (* recurse over sequence *)
                     let t2 = match (simplify_ast (SEQ(t))) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in
                     SEQ(h2@t2)
-(*    | ASSIGN (ast1, ast2) -> *)
+    | ASSIGN (ast1, ast2) -> ASSIGN (ast1, simplify_ast ast2)
     | x -> x
-
-(* TODO: type inference*)
 
 type var_type = VT of string * (types list)
 
@@ -60,7 +58,7 @@ let rec contains_type = function (* helper function: returns true iff list of ty
 
 
 let rec type_check = function (* ast node, variable_types -> acceptable_types list*)
-    | DECLARE (ast1, ast2), vt -> (* TODO check not already declared under same name! => ct_check -> invalid *)
+    | DECLARE (ast1, ast2), vt ->
         (match type_check (ast2, vt) with
             | [], _ -> [], vt
             | checked_var_types, _ ->
