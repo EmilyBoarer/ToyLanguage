@@ -1,10 +1,10 @@
 
 type types =
-    | INVALID_T (* if typed to this, then it doesn't type*)
     | UNIT_T
     | U32_T
     | I32_T
     | IDENT_T
+    (* if type list is empty -> not typeable *)
 
 type ast =
     | LET of ast * ast * ast (* let x:u32 = 5 *)
@@ -12,7 +12,6 @@ type ast =
     | ASSIGN of ast * ast    (* x = 5 *)
     | SEQ of (ast list)      (* thing1; thing2; (last semicolon optional)*)
     | INT of int             (* 5 *)
-    | INT2 of int             (* TODO REMOVE*)
     | IDENT of string        (* x *)
     | TYPE_IDENT of types    (* u32 *)
 (*    | OP2 of ast * ast *)
@@ -35,40 +34,52 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs *)
 (*    | ASSIGN (ast1, ast2) -> *)
     | x -> x
 
-(* TODO: type inference (ish) // support for multiple types to be valid*)
+(* TODO: type inference*)
 
-type var_type = VT of string * types
+type var_type = VT of string * (types list)
 
 let rec vt_check = function (* helper function: determine which type is associated with that ident string *)
     | s1, VT(s2, t)::tail -> if s1=s2 then t else vt_check (s1, tail)
-    | _, [] -> INVALID_T
+    | _, [] -> []
 
-let rec type_check = function (* ast node, variable_types*)
+
+let rec intersection2 = function (* helper helper function *)
+    | l1, h1::t1, h2::t2 -> let r = intersection2 (l1, t1, h2::t2) in
+                            (if h1=h2 then h1::r else r )
+    | l1, [], h2::t2 -> intersection2 (l1, l1, t2)
+    | _, _, [] -> []
+let rec intersection = function (* helper function: intersection of two lists (of types)*)
+    l1, l2 -> intersection2 (l1, l1, l2)
+
+
+let rec type_check = function (* ast node, variable_types -> acceptable_types list*)
     | DECLARE (ast1, ast2), vt -> (* TODO check not already declared under same name! => ct_check -> invalid *)
         (match type_check (ast2, vt) with
-            | INVALID_T, _ -> INVALID_T, vt
-            | checked_var_type, _ ->
+            | [], _ -> [], vt
+            | checked_var_types, _ ->
                 (match (type_check (ast1, vt)), ast1 with
-                    | (IDENT_T,_), IDENT(str) -> UNIT_T, (VT(str, checked_var_type))::vt
-                    | _ -> INVALID_T, vt))
+                    | (IDENT_T::[],_), IDENT(str) -> [UNIT_T], (VT(str, checked_var_types))::vt
+                    | _ -> [], vt))
 
     | ASSIGN (ast1, ast2), vt -> (* Assign should return the value being assigned *)
         (match (type_check (ast1, vt)), ast1 with (* check the that identifier has that type associated with it at this point in the program *)
-            | (IDENT_T,_), IDENT(str) ->
+            | (IDENT_T::[],_), IDENT(str) ->
                 let t1, _ = type_check (ast2, vt) in
-                (if (vt_check (str, vt)) = t1 then t1 else INVALID_T )
-            | _, _ -> INVALID_T), vt
+                intersection ((vt_check (str, vt)),t1)
+            | _, _ -> []), vt
+
     | SEQ (h::[]), vt -> type_check (h, vt) (* Seq should return (return of the last item in the sequence) *)
     | SEQ (h::t), vt ->
         (match type_check (h, vt) with
-            | INVALID_T, _ -> INVALID_T, vt
+            | [], _ -> [], vt
             | _, vt2 -> type_check (SEQ(t), vt2))
-    | INT (_), vt -> U32_T, vt (*TODO this needs to change, INT should be allowed to have multiple types. generally, this returns
-                        TODO list of all allowed types? invalid = empty list, some can check that list len = 1, or that a specific item is in the list*)
-    | INT2 (_), vt -> I32_T, vt (* TODO REMOVE *)
-    | IDENT (_), vt -> IDENT_T, vt
-    | TYPE_IDENT (t), vt -> t, vt
-    | _, vt -> INVALID_T, vt
+
+    | INT (_), vt -> [I32_T; U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
+    | IDENT (_), vt -> [IDENT_T], vt
+    | TYPE_IDENT (t), vt -> [t], vt
+    | _, vt -> [], vt
 
 
-let rec simplify_then_type_check = function x -> type_check ((simplify_ast x), [VT("x", U32_T)])
+let rec simplify_then_type_check = function x -> type_check ((simplify_ast x), [VT("x", [I32_T])])
+
+(*TODO check each variable is assigned only 1 type in the end! - or at least pick one!*)
