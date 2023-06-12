@@ -10,12 +10,12 @@ type ast =
     | LET of ast * ast * ast (* let x:u32 = 5 *)
     | DECLARE of ast * ast   (* let x:u32 *)
     | ASSIGN of ast * ast    (* x = 5 *)
-    | SEQ of (ast list)      (* thing1; thing2; (last semicolon optional)*)
+    | SEQ of (ast list)      (* {thing1; thing2;} (last semicolon optional)*)
     | INT of int             (* 5 *)
     | IDENT of string        (* x *)
     | TYPE_IDENT of types    (* u32 *)
 (*    | OP2 of ast * ast *)
-(*    | PRINT of ast *)
+    | PRINT of ast           (* print thing  -- prints the value returned by thing *)
 
 (* TODO: product and sum types (structs and enums) *)
 
@@ -89,6 +89,9 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
     | IDENT (str), vt -> let ts = types_of (str, vt) in
                          IDENT_T::ts, vt
     | TYPE_IDENT (t), vt -> [t], vt
+    | PRINT (thing), vt -> let ts, _ = type_check (thing, vt) in
+                           if intersection ([U32_T; I32_T], ts) = [] then [], vt
+                                                                     else [UNIT_T], vt
     | _, vt -> [], vt
 
 
@@ -96,7 +99,8 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 
 (*TODO check each variable is assigned only 1 type in the end! - or at least pick one!*)
 
+(* equivalent to program:  {let x:u32 = 7; print x} *)
 let run = simplify_then_type_check ( SEQ([
                                             LET(IDENT("x"), TYPE_IDENT(U32_T), INT(7));
-                                            IDENT("x")
+                                            PRINT(IDENT("x"))
                                      ]) )
