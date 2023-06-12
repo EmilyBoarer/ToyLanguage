@@ -41,6 +41,7 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs *)
                     SEQ(h2@t2)
     | ASSIGN (ast1, ast2) -> ASSIGN (ast1, simplify_ast ast2)
     | INFIX (ast1, ast2, ast3) -> INFIX(simplify_ast ast1, ast2, simplify_ast ast3)
+    | PRINT (ast) -> PRINT(simplify_ast ast)
     | x -> x
 
 type var_type = VT of string * (types list)
@@ -98,7 +99,7 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
     | IDENT (str), vt -> let ts = types_of (str, vt) in
                          IDENT_T::ts, vt
     | TYPE_IDENT (t), vt -> [t], vt
-    | PRINT (thing), vt -> let ts, _ = type_check (thing, vt) in
+    | PRINT (ast), vt -> let ts, _ = type_check (ast, vt) in
                            if intersection ([U32_T; I32_T], ts) = [] then [], vt
                                                                      else [UNIT_T], vt
     | INFIX (ast1, op, ast2), vt -> (match op with
@@ -118,10 +119,11 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
 
 let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 
-(*TODO check each variable is assigned only 1 type in the end! - or at least pick one!*)
 
-(* equivalent to program:  {let x:u32 = 7; x+3} *)
-let run = simplify_then_type_check ( SEQ([
-                                            LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7));
-                                            INFIX(IDENT("x"), I_LSHIFT, INT(3))
-                                     ]) )
+let run = let code = SEQ([
+                         LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7));
+                         PRINT(SEQ([
+                                       LET(IDENT("Y"), TYPE_IDENT(I32_T), INT(3));
+                                       INFIX(IDENT("x"), I_ADD, IDENT("Y"))
+                               ]))
+                  ]) in (simplify_ast code),(simplify_then_type_check code)
