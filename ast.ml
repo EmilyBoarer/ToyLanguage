@@ -27,6 +27,8 @@ type ast =
 
 (* TODO: product and sum types (structs and enums) *)
 
+(* SIMPLIFY AST & DESUGAR ------------------------------------------------------------------------------------------- *)
+
 let rec simplify_ast = function (* Convert LET, flatten SEQs *)
     | LET (ast1, ast2, ast3) -> let ast1_ = (simplify_ast ast1) in  (*split let into declare and assign*)
                                 SEQ ([
@@ -42,7 +44,10 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs *)
     | ASSIGN (ast1, ast2) -> ASSIGN (ast1, simplify_ast ast2)
     | INFIX (ast1, ast2, ast3) -> INFIX(simplify_ast ast1, ast2, simplify_ast ast3)
     | PRINT (ast) -> PRINT(simplify_ast ast)
+    (* TODO remove SEQ of nothing! *)
     | x -> x
+
+(* TYPE CHECKING ---------------------------------------------------------------------------------------------------- *)
 
 type var_type = VT of string * (types list)
 
@@ -117,13 +122,85 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
     | _, vt -> [], vt
 
 
+(* CONVERT TO PSEUDO ASM -------------------------------------------------------------------------------------------- *)
+
+type asm_instr =
+    | ASM_ADD of int * int * int (* rs1, rs2, rd *)
+    | ASM_ADDI of int * int * int (* rs1, rd, IMM *)
+
+type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
+
+let rec vrb_lookup = function
+    | s, VRB(s2, i)::t -> if s=s2 then i else vrb_lookup (s, t)
+    | _, [] -> failwith "ERROR: var reg binding lookup failed"
+
+let vrb_assign = function
+    | str, vrb -> VRB(str, 77) (* TODO: assign a register not yet bound. TODO2 handle when not enough registers push something onto the stack *)
+
+(*
+TODO: what about when there aren't enough registers!?
+TODO: determine types so know how to treat them in the asm
+TODO: how to handle results of infix operations
+TODO: chain multiple instructions
+*)
+let ra = 1
+let sp = 2
+(* temp 5,6,7,28,29,30,31 *)
+let a0 = 10
+
+let rec compile = function (* simplified&checked_ast, var/reg bindings -> reversed asm listing *)
+    | INFIX(IDENT(s1), I_ADD, IDENT(s2)), vrb ->
+        let rs1 = vrb_lookup (s1, vrb) in
+        let rs2 = vrb_lookup (s2, vrb) in
+        let rd = vrb_lookup ("0_reg_a0", vrb) in
+        [ASM_ADD (rs1, rs2, rd)], vrb
+    | INFIX(IDENT(s1), I_ADD, INT(i)), vrb ->
+        let rs1 = vrb_lookup (s1, vrb) in
+        let rd = vrb_lookup ("0_reg_a0", vrb) in
+        [ASM_ADDI (rs1, rd, i)], vrb
+    | SEQ(h::[]), vrb -> compile (h, vrb)
+    | SEQ(h::t), vrb ->
+        let instrs, vrb2 = compile (h, vrb) in
+        let instrs2, vrb3 = compile(SEQ(t), vrb2) in
+        instrs@instrs2, vrb
+    | DECLARE(IDENT(s), TYPE_IDENT(I32_T)), vrb -> (* TODO account for type when managing code! *)
+        [], (vrb_assign(s, vrb))::vrb
+    | ASSIGN(IDENT(s), ast), vrb ->
+        let rd = vrb_lookup (s, vrb) in
+        let instr, _ = compile (ast, VRB("0_reg_a0", rd)::vrb) in (instr, vrb) (* list functions as a stack *)
+    | INT(v), vrb ->
+        let rd = vrb_lookup ("0_reg_a0", vrb) in
+        [ASM_ADDI (0, rd, v)], vrb
+    | IDENT(s), vrb ->
+        let rd = vrb_lookup ("0_reg_a0", vrb) in
+        let rs1 = vrb_lookup (s, vrb) in
+        [ASM_ADDI (rs1, rd, 0)], vrb
+    | _ -> failwith "Can't compile that yet!"
+
+
+let compile_ast = function ast -> compile (ast, [VRB("0_reg_a0", 10)]) (* TODO: when functions, use of a0 needs to be re-evaluated *)
+
+(* CALLING CODE ----------------------------------------------------------------------------------------------------- *)
+
+(*
+NOTES:
+- scope of variables is from whenever they are declared, to the end of the SEQ/block that they are declared in
+
+*)
+
 let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 
 
-let run = let code = SEQ([
-                         LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7));
-                         PRINT(SEQ([
-                                       LET(IDENT("Y"), TYPE_IDENT(I32_T), INT(3));
-                                       INFIX(IDENT("x"), I_ADD, IDENT("Y"))
-                               ]))
-                  ]) in (simplify_ast code),(simplify_then_type_check code)
+(* let run = let code = SEQ([ *)
+(*                         LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7)); *)
+(*                         PRINT(SEQ([ *)
+(*                                       LET(IDENT("Y"), TYPE_IDENT(I32_T), INT(3)); *)
+(*                                       INFIX(IDENT("x"), I_ADD, IDENT("Y")) *)
+(*                               ])) *)
+(*                  ]) in code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code)) *)
+
+
+let run = let code = SEQ([LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60)); INFIX(IDENT("x"), I_ADD, INT(90))]) in
+                code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code))
+
+
