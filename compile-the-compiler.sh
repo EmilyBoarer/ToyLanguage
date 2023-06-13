@@ -5,4 +5,4 @@ ocamlc -c parser.mli
 ocamlc -c lexer.ml
 ocamlc -c parser.ml
 ocamlc -c lexerparser.ml
-ocamlc -o lexerparser lexer.cmo parser.cmo lexerparser.cmo
+ocamlc -o lexerparser ast.cmo lexer.cmo parser.cmo lexerparser.cmo

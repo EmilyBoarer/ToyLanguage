@@ -19,7 +19,7 @@ seq:
   | LBRACE i RBRACE                     { $2 }
 ;
 i:
-  | statement                           { $1 }
+  | statement                           { Ast.SEQ([$1]) }
   | statement SEMICOLON i               { Ast.SEQ([$1; $3]) }
 ;
 statement:

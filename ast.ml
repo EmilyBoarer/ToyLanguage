@@ -383,20 +383,21 @@ runs properly and leaves 144 in x10!!
 on https://creatorsim.github.io/creator/
 *)
 
-let run =
-    let code = SEQ([
-        LET(IDENT("a"),TYPE_IDENT(I32_T), INT(0));
-        LET(IDENT("b"),TYPE_IDENT(I32_T), INT(1));
-        DECLARE(IDENT("t"),TYPE_IDENT(I32_T));
-        WHILE( INFIX(IDENT("b"), I_LTHAN, INT(100)),
-            SEQ([
-                 ASSIGN(IDENT("t"), IDENT("b"));
-                 ASSIGN(IDENT("b"), INFIX(IDENT("a"), I_ADD, IDENT("b")));
-                 ASSIGN(IDENT("a"), IDENT("t"));
-            ]));
-        IDENT("b")
-        ]) in
+ let run code =
+(*    let code = SEQ([ *)
+(*        LET(IDENT("a"),TYPE_IDENT(I32_T), INT(0)); *)
+(*        LET(IDENT("b"),TYPE_IDENT(I32_T), INT(1)); *)
+(*        DECLARE(IDENT("t"),TYPE_IDENT(I32_T)); *)
+(*        WHILE( INFIX(IDENT("b"), I_LTHAN, INT(100)), *)
+(*            SEQ([ *)
+(*                 ASSIGN(IDENT("t"), IDENT("b")); *)
+(*                 ASSIGN(IDENT("b"), INFIX(IDENT("a"), I_ADD, IDENT("b"))); *)
+(*                 ASSIGN(IDENT("a"), IDENT("t")); *)
+(*            ])); *)
+(*        IDENT("b") *)
+(*        ]) in *)
     let a = (simplify_ast (code, false)) in
     let tc = (type_check (a, [])) in
     let asm, vrb, ih = compile_ast a in
-    code,a,tc,(asm, vrb, ih),print_asm asm
+(*    code,a,tc,(asm, vrb, ih), *)
+    print_asm asm
