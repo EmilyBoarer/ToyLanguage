@@ -1,5 +1,6 @@
 {
 open Parser        (* The type token is defined in parser.mli *)
+open Lexing
 exception Eof
 }
 rule token = parse
@@ -27,3 +28,4 @@ rule token = parse
   | ['a'-'z' 'A'-'Z']+ as lxm { IDENT(lxm) }
 
   | eof            { raise Eof }
+  | _ { Errors.complain ("ERROR L000: Illegal character " ^ (Char.escaped(Lexing.lexeme_char lexbuf 0))) }

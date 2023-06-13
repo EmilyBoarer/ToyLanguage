@@ -10,24 +10,22 @@ TODO refactor
 TODO give nicer errors
 *)
 
-(* DESUGAR ---------------------------------------------------------------------------------------------------------- *)
-
 let rec desugar_aast = function (* aast, bool ('not add eval') -> aast *)
-    | LET (aast1, aast2, aast3), _ -> let aast1_ = (desugar_aast (aast1, true)) in  (*split let into declare and assign*)
-                                SEQ ([
-                                    (DECLARE(aast1_, (desugar_aast (aast2, false))));
-                                    (ASSIGN (aast1_, (desugar_aast (aast3, false))))
+    | LET (a, aast1, aast2, aast3), _ -> let aast1_ = (desugar_aast (aast1, true)) in  (*split let into declare and assign*)
+                                SEQ (a, [
+                                    (DECLARE(a, aast1_, (desugar_aast (aast2, false))));
+                                    (ASSIGN (a, aast1_, (desugar_aast (aast3, false))))
                                 ])
-    | SEQ ((SEQ(x))::t), _ -> let t2 = match (desugar_aast (SEQ(t), false)) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying aast" in (* flatten nested SEQ's into one *)
-                           let x2 = match (desugar_aast (SEQ(x), false)) with SEQ(x2) -> x2 | _ -> failwith "Error simplifying aast" in
-                           SEQ(x2@t2)
-    | SEQ (h::t), _ -> let h2 = match (desugar_aast (h, false)) with SEQ(h2) -> h2 | h2 -> [h2] in (* recurse over sequence *)
-                    let t2 = match (desugar_aast (SEQ(t), false)) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying aast" in
-                    SEQ(h2@t2)
-    | ASSIGN (aast1, aast2), _ -> ASSIGN (aast1, desugar_aast (aast2, false))
-    | INFIX (aast1, op, aast3), _ -> INFIX(desugar_aast (aast1, true), op, desugar_aast (aast3, true))
-    | IF (aast1, aast2, aast3), _ -> IF(desugar_aast (aast1, false), desugar_aast (aast2, false), desugar_aast (aast3, false))
-    | WHILE (aast1, aast2), _ -> WHILE(desugar_aast (aast1, false), desugar_aast (aast2, false))
-    | INT (aast), false -> EVAL(INT(aast))
-    | IDENT (aast), false -> EVAL(IDENT(aast))
+    | SEQ (a, (SEQ(a2, x))::t), _ -> let t2 = match (desugar_aast (SEQ(a, t), false)) with SEQ(a, t2) -> t2 | _ -> failwith "Error simplifying aast" in (* flatten nested SEQ's into one *)
+                           let x2 = match (desugar_aast (SEQ(a2, x), false)) with SEQ(a, x2) -> x2 | _ -> failwith "Error simplifying aast" in
+                           SEQ(a, x2@t2)
+    | SEQ (a, h::t), _ -> let h2 = match (desugar_aast (h, false)) with SEQ(a, h2) -> h2 | h2 -> [h2] in (* recurse over sequence *)
+                    let t2 = match (desugar_aast (SEQ(a, t), false)) with SEQ(a, t2) -> t2 | _ -> failwith "Error simplifying aast" in
+                    SEQ(a, h2@t2)
+    | ASSIGN (a, aast1, aast2), _ -> ASSIGN (a, aast1, desugar_aast (aast2, false))
+    | INFIX (a, aast1, op, aast3), _ -> INFIX(a, desugar_aast (aast1, true), op, desugar_aast (aast3, true))
+    | IF (a, aast1, aast2, aast3), _ -> IF(a, desugar_aast (aast1, false), desugar_aast (aast2, false), desugar_aast (aast3, false))
+    | WHILE (a, aast1, aast2), _ -> WHILE(a, desugar_aast (aast1, false), desugar_aast (aast2, false))
+    | INT (a, aast), false -> EVAL(a, INT(a, aast))
+    | IDENT (a, aast), false -> EVAL(a, IDENT(a, aast))
     | x, _ -> x

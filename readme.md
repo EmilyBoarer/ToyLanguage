@@ -57,3 +57,25 @@ Do the final conversion from AST to assembly code as text
 > compiler.ml
 
 Orchestrates the whole compilation process, passing data from each stage to the next
+
+> errors.ml
+
+Used in giving generated errors back to the user
+
+## NOTES:
+- scope of variables is from whenever they are declared, to the end of the SEQ/block that they are declared in
+- if returns the value of whichever branch was evaluated
+- while returns the value of the final interation of it's body
+
+## MAIN future plan:
+- better errors, that actually tell you what's wrong and where it's wrong
+- 
+- add functions
+- sort out pushing some values to the stack when running out of registers to hold data in!!
+- sort out what happens when something can be typed to multiple things
+- then, recursive functions
+- then, flesh out the number of implemented infix operators
+- custom user types (product and sum types)
+
+- check use before assignment, etc.. other similar safety things, statically
+

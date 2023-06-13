@@ -1,7 +1,6 @@
 
 open Ast
 
-(* CONVERT TO PSEUDO ASM -------------------------------------------------------------------------------------------- *)
 
 type asm_instr =
     | ASM_ADD of int * int * int (* rd, rs1, rs2 *)
@@ -26,13 +25,9 @@ let rec vrb_assign_helper = function
     | _, _, [] -> failwith "ERROR: ran out of registers to assign!!"
 let vrb_assign = function str, vrb -> vrb_assign_helper (str, vrb, [5;6;7;28;29;30;31])
 
-
 let new_label_helper = ref 0
-
 let new_label = function () ->  new_label_helper := !new_label_helper+1;
                                 (!new_label_helper-1)
-
-    (* TODO: TODO handle when not enough registers push something onto the stack *)
 
 (*
 TODO: what about when there aren't enough registers!?
@@ -55,7 +50,8 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
                                    | I_H_REG(r1), I_H_REG(r2) ->
                                        instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd))
+                                       [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
             | I_LTHAN -> (match ih1, ih2 with
                                    | I_H_REG(r), I_H_IMM(i) ->
                                        instrs1 @ [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
@@ -64,7 +60,9 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
                                    | I_H_REG(r1), I_H_REG(r2) ->
                                        instrs1 @ instrs2 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (rs1, 0, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd))
+                                       [ASM_ADDI (rs1, 0, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
+            | _ -> [], vrb, I_H_NONE (* TODO: implement!*)
         )
     | INT(v), vrb ->
         [], vrb, I_H_IMM(v)
