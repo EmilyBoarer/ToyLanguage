@@ -137,10 +137,14 @@ let rec vrb_lookup = function
     | s, VRB(s2, i)::t -> if s=s2 then i else vrb_lookup (s, t)
     | _, [] -> failwith "ERROR: var reg binding lookup failed"
 
-let vrb_assign = function
-    | "x", vrb -> VRB("x", 28)
-    | "y", vrb -> VRB("y", 29)
-    | str, vrb -> VRB(str, -1) (* TODO: assign a register not yet bound. TODO2 handle when not enough registers push something onto the stack *)
+let rec vrb_assign_helper = function
+    | str, vrb, h::t -> if Bool.not (List.exists (function VRB(_,r) -> r=h) vrb)
+                        then VRB(str, h)
+                        else vrb_assign_helper (str, vrb, t)
+    | _, _, [] -> failwith "ERROR: ran out of registers to assign!!"
+let vrb_assign = function str, vrb -> vrb_assign_helper (str, vrb, [5;6;7;28;29;30;31])
+
+    (* TODO: TODO handle when not enough registers push something onto the stack *)
 
 (*
 TODO: what about when there aren't enough registers!?
@@ -153,9 +157,9 @@ type infix_helper = I_H_NONE | I_H_IMM of int | I_H_REG of int
 
 let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
     | INFIX(ast1, I_ADD, ast2), vrb ->
-        let rs1 = 10 in (* TODO aquire new free registers to use for this, with scope just to this INFIX *)
+        let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in
         let instrs1, vrb2, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
-        let rs2 = 11 in (* TODO same here, but with vrb2, just because that will then hold rs1 too! *)
+        let VRB(_,rs2) = vrb_assign("0_rs2", vrb2) in
         let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
         let rd = vrb_lookup ("0_result", vrb) in
         (match ih1, ih2 with
