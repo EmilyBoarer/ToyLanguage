@@ -154,6 +154,7 @@ type asm_instr =
     | ASM_SLTI of int * int * int (* rs1, rd, IMM TODO add SLTIU variation*)
     | ASM_JAL of int * int (* rd, LabelRef TODO convert these to relative addresses with another pass later on.*)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
+    | ASM_BLT of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_LABEL of int (* LabelRef *)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
@@ -235,11 +236,30 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let rs1 = vrb_lookup (s, vrb) in
         [ASM_ADDI (rs1, rd, 0)], vrb, I_H_NONE
 
+    | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *)
+        let instrs2, _, _ = compile(ast2, vrb) in
+        let instrs3, _, _ = compile(ast3, vrb) in
+        let else_label = new_label() in
+        let end_label = new_label() in
+        let VRB(_,rs1) = vrb_assign("0_rs1", vrb)  in
+        let instrs1_1, vrb2, ih1 = compile (inf1, VRB("0_result", rs1)::vrb) in
+        let VRB(_,rs2) = vrb_assign("0_rs1", vrb2) in
+        let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in
+        let instrsB = (match op, ih1, ih2 with
+            | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BLT(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
+            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (0,rs2,i2); ASM_BLT(r1, rs2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (0,rs1,i1); ASM_BLT(rs1, r2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (0,rs1,i1); ASM_ADDI (0,rs2,i2); ASM_BLT(rs1, rs2, else_label)]
+            | _ -> failwith "ERROR: cannot optimise infix if conditional"
+        ) in
+        instrs1_1 @ instrs1_2 @ instrsB @
+        instrs2 @ [ASM_JAL(0, end_label); ASM_LABEL(else_label)] @
+        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
     | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
         let VRB(s,rd2) = vrb_assign("0_result", vrb) in
-        let instrs1, vrb1, _ = compile(ast1, VRB(s, rd2)::vrb) in
-        let instrs2, vrb2, _ = compile(ast2, vrb) in
-        let instrs3, vrb3, _ = compile(ast3, vrb) in
+        let instrs1, _, _ = compile(ast1, VRB(s, rd2)::vrb) in
+        let instrs2, _, _ = compile(ast2, vrb) in
+        let instrs3, _, _ = compile(ast3, vrb) in
         let else_label = new_label() in
         let end_label = new_label() in
         instrs1 @ [ASM_BEQ(rd2, 0, else_label)] @
@@ -265,12 +285,7 @@ let compile_ast = function ast -> compile (ast, [VRB("0_result", 10)]) (* TODO: 
 NOTES:
 - scope of variables is from whenever they are declared, to the end of the SEQ/block that they are declared in
 
-
-TODO currently, can conditional jump on BEQ true, bool. Future: optimise this down to BLT etc...
-
 MAIN future plan:
-- add if conditional statements - depending on a bool value, jump to different labels, derived from the AST
-- optimise if conditional statements, as per TODO above ^^^
 - add loops
 - add functions
 - sort out pushing some values to the stack when running out of registers to hold data in!!
