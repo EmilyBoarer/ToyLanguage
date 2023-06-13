@@ -156,7 +156,7 @@ type asm_instr =
     | ASM_SLTI of int * int * int (* rd, rs1, IMM TODO add SLTIU variation*)
     | ASM_JAL of int * int (* rd, LabelRef TODO convert these to relative addresses with another pass later on.*)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
-    | ASM_BLT of int * int * int (* rs1, rs2, LabelRef *)
+    | ASM_BGE of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_LABEL of int (* LabelRef *)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
@@ -248,10 +248,10 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let VRB(_,rs2) = vrb_assign("0_rs1", vrb2) in
         let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in
         let instrsB = (match op, ih1, ih2 with
-            | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BLT(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
-            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (rs2, 0, i2); ASM_BLT(r1, rs2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (rs1, 0, i1); ASM_BLT(rs1, r2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rs2, 0, i2); ASM_BLT(rs1, rs2, else_label)]
+            | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BGE(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
+            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (rs2, 0, i2); ASM_BGE(r1, rs2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (rs1, 0, i1); ASM_BGE(rs1, r2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rs2, 0, i2); ASM_BGE(rs1, rs2, else_label)]
             | _ -> failwith "ERROR: cannot optimise infix if conditional"
         ) in
         instrs1_1 @ instrs1_2 @ instrsB @
@@ -332,8 +332,8 @@ let rec print_asm_helper = function
     | ASM_SLT(rd, rs1, rs2)::t ->
         Printf.printf "slt x%i, x%i, x%i\n" rd rs1 rs2;
         print_asm_helper t
-    | ASM_BLT(rs1, rs2, label)::t ->
-        Printf.printf "blt x%i, x%i, lab%i\n" rs1 rs2 label;
+    | ASM_BGE(rs1, rs2, label)::t ->
+        Printf.printf "bge x%i, x%i, lab%i\n" rs1 rs2 label;
         print_asm_helper t
     | ASM_BEQ(rs1, rs2, label)::t ->
         Printf.printf "beq x%i, x%i, lab%i\n" rs1 rs2 label;
