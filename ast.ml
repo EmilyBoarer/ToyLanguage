@@ -28,6 +28,7 @@ type ast =
     | PRINT of ast           (* print thing  -- prints the value returned by thing *)
     | EVAL of ast (* TODO: formalise how this is added to the AST, basically, any individual INT or IDENT should be EVALed to get them into register, but without EVAL they make more efficient code in INFIXes *)
     (* TODO: where to handle converting from brackets (3+4)*65 to just nested INFIX *)
+    | IF of ast * ast * ast  (* if condition then seq1   --or-- if condition then seq1 else seq2  -- seq2 can of course be a seq just containing another if clause! 3rd ast is just SEQ([]) if there's no else part*)
 
 (* TODO: product and sum types (structs and enums) *)
 
@@ -47,6 +48,7 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs :-  ast, bool (not 
                     SEQ(h2@t2)
     | ASSIGN (ast1, ast2), _ -> ASSIGN (ast1, simplify_ast (ast2, false))
     | INFIX (ast1, op, ast3), _ -> INFIX(simplify_ast (ast1, true), op, simplify_ast (ast3, true))
+    | IF (ast1, ast2, ast3), _ -> IF(simplify_ast (ast1, false), simplify_ast (ast2, false), simplify_ast (ast3, false))
     | PRINT (ast), _ -> PRINT(simplify_ast (ast, false))
     | INT (ast), false -> EVAL(INT(ast))
     | IDENT (ast), false -> EVAL(IDENT(ast))
@@ -131,6 +133,14 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
                                             let i2 = intersection ([U32_T], ts2) in
                                             if i1 = [] then [], vt else if i2 = [] then [], vt else i1, vt
     )
+    | IF (ast1, ast2, ast3), vt ->
+        let ts1, _ = type_check (ast1, vt) in
+        let ts2, _ = type_check (ast2, vt) in
+        let ts3, _ = type_check (ast3, vt) in
+        if (contains_type (BOOL_T, ts1)) then (
+            let i = intersection (ts2, ts3) in
+            if i = [] then [], vt else i, vt
+        ) else [], vt
     | _, vt -> [], vt
 
 
@@ -230,9 +240,10 @@ NOTES:
 TODO currently, can conditional jump on BEQ true, bool. Future: optimise this down to BLT etc...
 
 MAIN future plan:
-- add if conditional statements
-- add functions
+- add if conditional statements - depending on a bool value, jump to different labels, derived from the AST
+- optimise if conditional statements, as per TODO above ^^^
 - add loops
+- add functions
 - sort out pushing some values to the stack when running out of registers to hold data in!!
 - then, recursive functions
 - then, flesh out the number of implemented infix operators
@@ -267,7 +278,8 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false
 
 let run = let code = SEQ([
                             LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
-                            INFIX(IDENT("x"), I_LTHAN, INT(20))
+                            IF( INFIX(IDENT("x"), I_LTHAN, INT(20)),
+                                INT(50), INT(80))
                          ]) in
                 code,(simplify_ast (code, false)),(simplify_then_type_check code)
-                ,(compile_ast (simplify_ast (code, false)))
+(*                ,(compile_ast (simplify_ast (code, false))) *)
