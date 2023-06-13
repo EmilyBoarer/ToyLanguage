@@ -319,7 +319,38 @@ MAIN future plan:
 
 *)
 
-let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [])
+let rec print_asm_helper = function
+    | ASM_ADDI(rd, rs1, imm)::t ->
+        Printf.printf "addi x%i, x%i, %i\n" rd rs1 imm;
+        print_asm_helper t
+    | ASM_ADD(rd, rs1, rs2)::t ->
+        Printf.printf "add x%i, x%i, x%i\n" rd rs1 rs2;
+        print_asm_helper t
+    | ASM_SLTI(rd, rs1, imm)::t ->
+        Printf.printf "slti x%i, x%i, %i\n" rd rs1 imm;
+        print_asm_helper t
+    | ASM_SLT(rd, rs1, rs2)::t ->
+        Printf.printf "slt x%i, x%i, x%i\n" rd rs1 rs2;
+        print_asm_helper t
+    | ASM_BLT(rs1, rs2, label)::t ->
+        Printf.printf "blt x%i, x%i, lab%i\n" rs1 rs2 label;
+        print_asm_helper t
+    | ASM_BEQ(rs1, rs2, label)::t ->
+        Printf.printf "beq x%i, x%i, lab%i\n" rs1 rs2 label;
+        print_asm_helper t
+    | ASM_JAL(rd, label)::t ->
+        Printf.printf "jal x%i, lab%i\n" rd label;
+        print_asm_helper t
+    | ASM_LABEL(label)::t ->
+        Printf.printf "lab%i:\n" label;
+        print_asm_helper t
+    | [] -> ()
+
+
+let print_asm = function l ->
+    print_endline ".text";
+    print_endline "main:" ;
+    print_asm_helper l
 
 (* Fibonacci:
 
@@ -352,17 +383,20 @@ runs properly and leaves 144 in x10!!
 on https://creatorsim.github.io/creator/
 *)
 
-let run = let code = SEQ([
-                            LET(IDENT("a"),TYPE_IDENT(I32_T), INT(0));
-                            LET(IDENT("b"),TYPE_IDENT(I32_T), INT(1));
-                            DECLARE(IDENT("t"),TYPE_IDENT(I32_T));
-                            WHILE( INFIX(IDENT("b"), I_LTHAN, INT(100)),
-                                SEQ([
-                                     ASSIGN(IDENT("t"), IDENT("b"));
-                                     ASSIGN(IDENT("b"), INFIX(IDENT("a"), I_ADD, IDENT("b")));
-                                     ASSIGN(IDENT("a"), IDENT("t"));
-                                ]));
-                            IDENT("b")
-                         ]) in
-                code,(simplify_ast (code, false)),(simplify_then_type_check code)
-                ,(compile_ast (simplify_ast (code, false)))
+let run =
+    let code = SEQ([
+        LET(IDENT("a"),TYPE_IDENT(I32_T), INT(0));
+        LET(IDENT("b"),TYPE_IDENT(I32_T), INT(1));
+        DECLARE(IDENT("t"),TYPE_IDENT(I32_T));
+        WHILE( INFIX(IDENT("b"), I_LTHAN, INT(100)),
+            SEQ([
+                 ASSIGN(IDENT("t"), IDENT("b"));
+                 ASSIGN(IDENT("b"), INFIX(IDENT("a"), I_ADD, IDENT("b")));
+                 ASSIGN(IDENT("a"), IDENT("t"));
+            ]));
+        IDENT("b")
+        ]) in
+    let a = (simplify_ast (code, false)) in
+    let tc = (type_check (a, [])) in
+    let asm, vrb, ih = compile_ast a in
+    code,a,tc,(asm, vrb, ih),print_asm asm
