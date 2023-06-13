@@ -28,7 +28,7 @@ type ast =
     | PRINT of ast           (* print thing  -- prints the value returned by thing *)
     | EVAL of ast (* TODO: formalise how this is added to the AST, basically, any individual INT or IDENT should be EVALed to get them into register, but without EVAL they make more efficient code in INFIXes *)
     (* TODO: where to handle converting from brackets (3+4)*65 to just nested INFIX *)
-    | IF of ast * ast * ast  (* if condition then seq1   --or-- if condition then seq1 else seq2  -- seq2 can of course be a seq just containing another if clause! 3rd ast is just SEQ([]) if there's no else part*)
+    | IF of ast * ast * ast  (* if condition then seq1 else seq2*)
 
 (* TODO: product and sum types (structs and enums) *)
 
@@ -152,6 +152,9 @@ type asm_instr =
 (*    | ASM_LUI of int * int (* rd, upperIMM *) *)
     | ASM_SLT of int * int * int (* rs1, rs2, rd TODO add SLTU variation*)
     | ASM_SLTI of int * int * int (* rs1, rd, IMM TODO add SLTIU variation*)
+    | ASM_JAL of int * int (* rd, LabelRef TODO convert these to relative addresses with another pass later on.*)
+    | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
+    | ASM_LABEL of int (* LabelRef *)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
 
@@ -165,6 +168,12 @@ let rec vrb_assign_helper = function
                         else vrb_assign_helper (str, vrb, t)
     | _, _, [] -> failwith "ERROR: ran out of registers to assign!!"
 let vrb_assign = function str, vrb -> vrb_assign_helper (str, vrb, [5;6;7;28;29;30;31])
+
+
+let new_label_helper = ref 0
+
+let new_label = function () ->  new_label_helper := !new_label_helper+1;
+                                (!new_label_helper-1)
 
     (* TODO: TODO handle when not enough registers push something onto the stack *)
 
@@ -225,6 +234,26 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let rd = vrb_lookup ("0_result", vrb) in
         let rs1 = vrb_lookup (s, vrb) in
         [ASM_ADDI (rs1, rd, 0)], vrb, I_H_NONE
+
+    | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
+        let VRB(s,rd2) = vrb_assign("0_result", vrb) in
+        let instrs1, vrb1, _ = compile(ast1, VRB(s, rd2)::vrb) in
+        let instrs2, vrb2, _ = compile(ast2, vrb) in
+        let instrs3, vrb3, _ = compile(ast3, vrb) in
+        let else_label = new_label() in
+        let end_label = new_label() in
+        instrs1 @ [ASM_BEQ(rd2, 0, else_label)] @
+        instrs2 @ [ASM_JAL(0, end_label); ASM_LABEL(else_label)] @
+        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
+        (*
+        branch condition = false .else
+        <then> code
+        jal .end, rd=0
+        .else
+        <else> code
+        .end
+        *)
+
     | _ -> failwith "Can't compile that yet!"
 
 
@@ -279,7 +308,7 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false
 let run = let code = SEQ([
                             LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
                             IF( INFIX(IDENT("x"), I_LTHAN, INT(20)),
-                                INT(50), INT(80))
+                                IDENT("x"), INT(20))
                          ]) in
                 code,(simplify_ast (code, false)),(simplify_then_type_check code)
-(*                ,(compile_ast (simplify_ast (code, false))) *)
+                ,(compile_ast (simplify_ast (code, false)))
