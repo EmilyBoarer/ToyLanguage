@@ -1,9 +1,10 @@
 
 type types =
     | UNIT_T
+    | IDENT_T
     | U32_T
     | I32_T
-    | IDENT_T
+    | BOOL_T
     (* if type list is empty -> not typeable *)
 
 type infix_operations =
@@ -13,6 +14,7 @@ type infix_operations =
     | I_DIV
     | I_LSHIFT
     | I_RSHIFT
+    | I_LTHAN
 
 type ast =
     | LET of ast * ast * ast (* let x:u32 = 5 *)
@@ -44,7 +46,7 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs :-  ast, bool (not 
                     let t2 = match (simplify_ast (SEQ(t), false)) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in
                     SEQ(h2@t2)
     | ASSIGN (ast1, ast2), _ -> ASSIGN (ast1, simplify_ast (ast2, false))
-    | INFIX (ast1, ast2, ast3), _ -> INFIX(simplify_ast (ast1, true), ast2, simplify_ast (ast3, true))
+    | INFIX (ast1, op, ast3), _ -> INFIX(simplify_ast (ast1, true), op, simplify_ast (ast3, true))
     | PRINT (ast), _ -> PRINT(simplify_ast (ast, false))
     | INT (ast), false -> EVAL(INT(ast))
     | IDENT (ast), false -> EVAL(IDENT(ast))
@@ -118,6 +120,11 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
                                             let i1 = intersection ([U32_T; I32_T], ts1) in
                                             let i2 = intersection (ts1, ts2) in
                                             if i1 = [] then [], vt else if i2 = [] then [], vt else i2, vt
+        | I_LTHAN                        -> let ts1, _ = type_check (ast1, vt) in
+                                            let ts2, _ = type_check (ast2, vt) in
+                                            let i1 = intersection ([U32_T; I32_T], ts1) in
+                                            let i2 = intersection (ts1, ts2) in
+                                            if i1 = [] then [], vt else if i2 = [] then [], vt else [BOOL_T], vt
         | I_LSHIFT | I_RSHIFT            -> let ts1, _ = type_check (ast1, vt) in
                                             let ts2, _ = type_check (ast2, vt) in
                                             let i1 = intersection ([U32_T; I32_T], ts1) in
@@ -132,7 +139,9 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
 type asm_instr =
     | ASM_ADD of int * int * int (* rs1, rs2, rd *)
     | ASM_ADDI of int * int * int (* rs1, rd, IMM *)
-    | ASM_LUI of int * int (* rd, upperIMM *)
+(*    | ASM_LUI of int * int (* rd, upperIMM *) *)
+    | ASM_SLT of int * int * int (* rs1, rs2, rd TODO add SLTU variation*)
+    | ASM_SLTI of int * int * int (* rs1, rd, IMM TODO add SLTIU variation*)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
 
@@ -159,20 +168,30 @@ TODO: chain multiple instructions
 type infix_helper = I_H_NONE | I_H_IMM of int | I_H_REG of int
 
 let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
-    | INFIX(ast1, I_ADD, ast2), vrb ->
+    | INFIX(ast1, op, ast2), vrb ->
         let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in
         let instrs1, vrb2, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
         let VRB(_,rs2) = vrb_assign("0_rs2", vrb2) in
         let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
         let rd = vrb_lookup ("0_result", vrb) in
-        (match ih1, ih2 with
-            | I_H_REG(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG(r) -> (* TODO handle when imm is too long! *)
-                instrs1 @ instrs2 @ [ASM_ADDI (r, rd, i)], vrb, I_H_REG(rd)
-            | I_H_REG(r1), I_H_REG(r2) ->
-                instrs1 @ instrs2 @ [ASM_ADD (r1, r2, rd)], vrb, I_H_REG(rd)
-            | I_H_IMM(i1), I_H_IMM(i2) ->
-                [ASM_ADDI (0,rs1,i1); ASM_ADDI (rs1, rd, i2)], vrb, I_H_REG(rd)
-            )
+        (match op with  (* TODO handle when imm is too long! *)
+            | I_ADD -> (match ih1, ih2 with
+                                   | I_H_REG(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG(r) ->
+                                       instrs1 @ instrs2 @ [ASM_ADDI (r, rd, i)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG(r2) ->
+                                       instrs1 @ instrs2 @ [ASM_ADD (r1, r2, rd)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i1), I_H_IMM(i2) ->
+                                       [ASM_ADDI (0,rs1,i1); ASM_ADDI (rs1, rd, i2)], vrb, I_H_REG(rd))
+            | I_LTHAN -> (match ih1, ih2 with
+                                   | I_H_REG(r), I_H_IMM(i) ->
+                                       instrs1 @ [ASM_SLTI (r, rd, i)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i), I_H_REG(r) ->
+                                       instrs2 @ [ASM_ADDI (0,rs1,i); ASM_SLT (rs1, r, rd)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG(r2) ->
+                                       instrs1 @ instrs2 @ [ASM_SLT (r1, r2, rd)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i1), I_H_IMM(i2) ->
+                                       [ASM_ADDI (0,rs1,i1); ASM_SLTI (rs1, rd, i2)], vrb, I_H_REG(rd))
+        )
     | INT(v), vrb ->
         [], vrb, I_H_IMM(v)
     | IDENT(s), vrb ->
@@ -207,6 +226,19 @@ let compile_ast = function ast -> compile (ast, [VRB("0_result", 10)]) (* TODO: 
 NOTES:
 - scope of variables is from whenever they are declared, to the end of the SEQ/block that they are declared in
 
+
+TODO currently, can conditional jump on BEQ true, bool. Future: optimise this down to BLT etc...
+
+MAIN future plan:
+- add if conditional statements
+- add functions
+- add loops
+- sort out pushing some values to the stack when running out of registers to hold data in!!
+- then, recursive functions
+- then, flesh out the number of implemented infix operators
+- custom user types (product and sum types)
+
+
 *)
 
 let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [])
@@ -221,14 +253,21 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false
 (*                  ]) in code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code)) *)
 
 
+(* let run = let code = SEQ([ *)
+(*                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60)); *)
+(*                            LET(IDENT("y"),TYPE_IDENT(I32_T), INFIX(INT(90), I_ADD, INT(10))); *)
+(*                            INFIX( *)
+(*                                INFIX(IDENT("x"), I_ADD, INT(300)) *)
+(*                                , I_ADD, IDENT("y")) *)
+(*                         ]) in *)
+(*                code,(simplify_ast (code, false)),(simplify_then_type_check code) *)
+(*                ,(compile_ast (simplify_ast (code, false))) *)
+
+
+
 let run = let code = SEQ([
                             LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
-                            LET(IDENT("y"),TYPE_IDENT(I32_T), INFIX(INT(90), I_ADD, INT(10)));
-                            INFIX(
-                                INFIX(IDENT("x"), I_ADD, INT(300))
-                                , I_ADD, IDENT("y"))
+                            INFIX(IDENT("x"), I_LTHAN, INT(20))
                          ]) in
                 code,(simplify_ast (code, false)),(simplify_then_type_check code)
                 ,(compile_ast (simplify_ast (code, false)))
-
-
