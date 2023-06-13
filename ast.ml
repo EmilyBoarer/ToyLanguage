@@ -29,12 +29,13 @@ type ast =
     | EVAL of ast (* TODO: formalise how this is added to the AST, basically, any individual INT or IDENT should be EVALed to get them into register, but without EVAL they make more efficient code in INFIXes *)
     (* TODO: where to handle converting from brackets (3+4)*65 to just nested INFIX *)
     | IF of ast * ast * ast  (* if condition then seq1 else seq2*)
+    | WHILE of ast * ast     (* while condition seq *)
 
 (* TODO: product and sum types (structs and enums) *)
 
 (* SIMPLIFY AST & DESUGAR ------------------------------------------------------------------------------------------- *)
 
-let rec simplify_ast = function (* Convert LET, flatten SEQs :-  ast, bool (not add eval) -> ast *)
+let rec simplify_ast = function (* Convert LET, flatten SEQs, EVAL INTs and IDENTs :-  ast, bool (not add eval) -> ast *)
     | LET (ast1, ast2, ast3), _ -> let ast1_ = (simplify_ast (ast1, true)) in  (*split let into declare and assign*)
                                 SEQ ([
                                     (DECLARE(ast1_, (simplify_ast (ast2, false))));
@@ -49,6 +50,7 @@ let rec simplify_ast = function (* Convert LET, flatten SEQs :-  ast, bool (not 
     | ASSIGN (ast1, ast2), _ -> ASSIGN (ast1, simplify_ast (ast2, false))
     | INFIX (ast1, op, ast3), _ -> INFIX(simplify_ast (ast1, true), op, simplify_ast (ast3, true))
     | IF (ast1, ast2, ast3), _ -> IF(simplify_ast (ast1, false), simplify_ast (ast2, false), simplify_ast (ast3, false))
+    | WHILE (ast1, ast2), _ -> WHILE(simplify_ast (ast1, false), simplify_ast (ast2, false))
     | PRINT (ast), _ -> PRINT(simplify_ast (ast, false))
     | INT (ast), false -> EVAL(INT(ast))
     | IDENT (ast), false -> EVAL(IDENT(ast))
@@ -141,6 +143,10 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
             let i = intersection (ts2, ts3) in
             if i = [] then [], vt else i, vt
         ) else [], vt
+    | WHILE (ast1, ast2), vt ->
+        let ts1, _ = type_check (ast1, vt) in
+        let ts2, _ = type_check (ast2, vt) in
+        if (contains_type (BOOL_T, ts1)) then ts2, vt else [], vt
     | _, vt -> [], vt
 
 
@@ -274,6 +280,23 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         .end
         *)
 
+    | WHILE(ast1, ast2), vrb ->
+            let VRB(s,rd2) = vrb_assign("0_result", vrb) in
+            let instrs1, _, _ = compile(ast1, VRB(s, rd2)::vrb) in
+            let instrs2, _, _ = compile(ast2, VRB("0_ignore", rd2)::vrb) in
+            let start_label = new_label() in
+            let end_label = new_label() in
+            [ASM_LABEL(start_label)] @ instrs1 @
+            [ASM_BEQ(rd2, 0, end_label)] @ instrs2 @
+            [ASM_JAL(0, start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
+            (*
+            .start
+            branch condition = false .end
+            code
+            jal .start, rd=0
+            .end
+            *)
+
     | _ -> failwith "Can't compile that yet!"
 
 
@@ -284,6 +307,8 @@ let compile_ast = function ast -> compile (ast, [VRB("0_result", 10)]) (* TODO: 
 (*
 NOTES:
 - scope of variables is from whenever they are declared, to the end of the SEQ/block that they are declared in
+- if returns the value of whichever branch was evaluated
+- while returns the value of the final interation of it's body
 
 MAIN future plan:
 - add loops
@@ -299,31 +324,13 @@ MAIN future plan:
 let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [])
 
 
-(* let run = let code = SEQ([ *)
-(*                         LET(IDENT("x"), TYPE_IDENT(I32_T), INT(7)); *)
-(*                         PRINT(SEQ([ *)
-(*                                       LET(IDENT("Y"), TYPE_IDENT(I32_T), INT(3)); *)
-(*                                       INFIX(IDENT("x"), I_ADD, IDENT("Y")) *)
-(*                               ])) *)
-(*                  ]) in code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code)) *)
-
-
-(* let run = let code = SEQ([ *)
-(*                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60)); *)
-(*                            LET(IDENT("y"),TYPE_IDENT(I32_T), INFIX(INT(90), I_ADD, INT(10))); *)
-(*                            INFIX( *)
-(*                                INFIX(IDENT("x"), I_ADD, INT(300)) *)
-(*                                , I_ADD, IDENT("y")) *)
-(*                         ]) in *)
-(*                code,(simplify_ast (code, false)),(simplify_then_type_check code) *)
-(*                ,(compile_ast (simplify_ast (code, false))) *)
-
-
-
 let run = let code = SEQ([
-                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
-                            IF( INFIX(IDENT("x"), I_LTHAN, INT(20)),
-                                IDENT("x"), INT(20))
+                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(10));
+                            WHILE( INFIX(IDENT("x"), I_LTHAN, INT(20)),
+                                SEQ([
+                                    ASSIGN(IDENT("x"), INFIX(IDENT("x"), I_ADD, INT(1)));
+                                    INFIX(INT(1), I_ADD, INT(2))
+                                ]));
                          ]) in
                 code,(simplify_ast (code, false)),(simplify_then_type_check code)
                 ,(compile_ast (simplify_ast (code, false)))
