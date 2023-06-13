@@ -24,6 +24,8 @@ type ast =
     | TYPE_IDENT of types    (* u32 *)
     | INFIX of ast * infix_operations * ast     (* x+3  or   a<<1   etc..*)
     | PRINT of ast           (* print thing  -- prints the value returned by thing *)
+    | EVAL of ast (* TODO: formalise how this is added to the AST, basically, any individual INT or IDENT should be EVALed to get them into register, but without EVAL they make more efficient code in INFIXes *)
+    (* TODO: where to handle converting from brackets (3+4)*65 to just nested INFIX *)
 
 (* TODO: product and sum types (structs and enums) *)
 
@@ -127,6 +129,7 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
 type asm_instr =
     | ASM_ADD of int * int * int (* rs1, rs2, rd *)
     | ASM_ADDI of int * int * int (* rs1, rd, IMM *)
+    | ASM_LUI of int * int (* rd, upperIMM *)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
 
@@ -135,7 +138,9 @@ let rec vrb_lookup = function
     | _, [] -> failwith "ERROR: var reg binding lookup failed"
 
 let vrb_assign = function
-    | str, vrb -> VRB(str, 77) (* TODO: assign a register not yet bound. TODO2 handle when not enough registers push something onto the stack *)
+    | "x", vrb -> VRB("x", 28)
+    | "y", vrb -> VRB("y", 29)
+    | str, vrb -> VRB(str, -1) (* TODO: assign a register not yet bound. TODO2 handle when not enough registers push something onto the stack *)
 
 (*
 TODO: what about when there aren't enough registers!?
@@ -143,42 +148,51 @@ TODO: determine types so know how to treat them in the asm
 TODO: how to handle results of infix operations
 TODO: chain multiple instructions
 *)
-let ra = 1
-let sp = 2
-(* temp 5,6,7,28,29,30,31 *)
-let a0 = 10
 
-let rec compile = function (* simplified&checked_ast, var/reg bindings -> reversed asm listing *)
-    | INFIX(IDENT(s1), I_ADD, IDENT(s2)), vrb ->
-        let rs1 = vrb_lookup (s1, vrb) in
-        let rs2 = vrb_lookup (s2, vrb) in
-        let rd = vrb_lookup ("0_reg_a0", vrb) in
-        [ASM_ADD (rs1, rs2, rd)], vrb
-    | INFIX(IDENT(s1), I_ADD, INT(i)), vrb ->
-        let rs1 = vrb_lookup (s1, vrb) in
-        let rd = vrb_lookup ("0_reg_a0", vrb) in
-        [ASM_ADDI (rs1, rd, i)], vrb
+type infix_helper = I_H_NONE | I_H_IMM of int | I_H_REG of int
+
+let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
+    | INFIX(ast1, I_ADD, ast2), vrb ->
+        let rs1 = 10 in (* TODO aquire new free registers to use for this, with scope just to this INFIX *)
+        let instrs1, vrb2, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
+        let rs2 = 11 in (* TODO same here, but with vrb2, just because that will then hold rs1 too! *)
+        let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+        let rd = vrb_lookup ("0_result", vrb) in
+        (match ih1, ih2 with
+            | I_H_REG(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG(r) -> (* TODO handle when imm is too long! *)
+                instrs1 @ instrs2 @ [ASM_ADDI (r, rd, i)], vrb, I_H_REG(rd)
+            | I_H_REG(r1), I_H_REG(r2) ->
+                instrs1 @ instrs2 @ [ASM_ADD (r1, r2, rd)], vrb, I_H_REG(rd)
+            | _ ->
+                instrs1 @ instrs2 @ [ASM_ADD (rs1, rs2, rd)], vrb, I_H_REG(rd)
+            )
+    | INT(v), vrb ->
+        [], vrb, I_H_IMM(v)
+    | IDENT(s), vrb ->
+        let reg = vrb_lookup (s, vrb) in
+        [], vrb, I_H_REG(reg)
+
     | SEQ(h::[]), vrb -> compile (h, vrb)
     | SEQ(h::t), vrb ->
-        let instrs, vrb2 = compile (h, vrb) in
-        let instrs2, vrb3 = compile(SEQ(t), vrb2) in
-        instrs@instrs2, vrb
+        let instrs1, vrb2, _ = compile(h, vrb) in
+        let instrs2, _, _    = compile(SEQ(t), vrb2) in
+        instrs1@instrs2, vrb, I_H_NONE
     | DECLARE(IDENT(s), TYPE_IDENT(I32_T)), vrb -> (* TODO account for type when managing code! *)
-        [], (vrb_assign(s, vrb))::vrb
+        [], (vrb_assign(s, vrb))::vrb, I_H_NONE
     | ASSIGN(IDENT(s), ast), vrb ->
         let rd = vrb_lookup (s, vrb) in
-        let instr, _ = compile (ast, VRB("0_reg_a0", rd)::vrb) in (instr, vrb) (* list functions as a stack *)
-    | INT(v), vrb ->
-        let rd = vrb_lookup ("0_reg_a0", vrb) in
-        [ASM_ADDI (0, rd, v)], vrb
-    | IDENT(s), vrb ->
-        let rd = vrb_lookup ("0_reg_a0", vrb) in
+        let instr, _, _ = compile (ast, VRB("0_result", rd)::vrb) in (instr, vrb, I_H_NONE) (* list functions as a stack *)
+    | EVAL(INT(v)), vrb ->
+        let rd = vrb_lookup ("0_result", vrb) in
+        [ASM_ADDI (0, rd, v)], vrb, I_H_NONE
+    | EVAL(IDENT(s)), vrb ->
+        let rd = vrb_lookup ("0_result", vrb) in
         let rs1 = vrb_lookup (s, vrb) in
-        [ASM_ADDI (rs1, rd, 0)], vrb
+        [ASM_ADDI (rs1, rd, 0)], vrb, I_H_NONE
     | _ -> failwith "Can't compile that yet!"
 
 
-let compile_ast = function ast -> compile (ast, [VRB("0_reg_a0", 10)]) (* TODO: when functions, use of a0 needs to be re-evaluated *)
+let compile_ast = function ast -> compile (ast, [VRB("0_result", 10)]) (* TODO: when functions, use of result: a0=10 needs to be re-evaluated *)
 
 (* CALLING CODE ----------------------------------------------------------------------------------------------------- *)
 
@@ -200,7 +214,13 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 (*                  ]) in code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code)) *)
 
 
-let run = let code = SEQ([LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60)); INFIX(IDENT("x"), I_ADD, INT(90))]) in
+let run = let code = SEQ([
+                            LET(IDENT("x"),TYPE_IDENT(I32_T), EVAL(INT(60)));
+                            LET(IDENT("y"),TYPE_IDENT(I32_T), EVAL(INT(90)));
+                            INFIX(
+                                INFIX(IDENT("x"), I_ADD, INT(300))
+                                , I_ADD, IDENT("y"))
+                         ]) in
                 code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code))
 
 
