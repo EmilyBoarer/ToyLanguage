@@ -170,8 +170,8 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
                 instrs1 @ instrs2 @ [ASM_ADDI (r, rd, i)], vrb, I_H_REG(rd)
             | I_H_REG(r1), I_H_REG(r2) ->
                 instrs1 @ instrs2 @ [ASM_ADD (r1, r2, rd)], vrb, I_H_REG(rd)
-            | _ ->
-                instrs1 @ instrs2 @ [ASM_ADD (rs1, rs2, rd)], vrb, I_H_REG(rd)
+            | I_H_IMM(i1), I_H_IMM(i2) ->
+                [ASM_ADDI (0,rs1,i1); ASM_ADDI (rs1, rd, i2)], vrb, I_H_REG(rd)
             )
     | INT(v), vrb ->
         [], vrb, I_H_IMM(v)
@@ -209,7 +209,7 @@ NOTES:
 
 *)
 
-let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [VT("x", [I32_T])])
+let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [])
 
 
 (* let run = let code = SEQ([ *)
@@ -223,7 +223,7 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false
 
 let run = let code = SEQ([
                             LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
-                            LET(IDENT("y"),TYPE_IDENT(I32_T), INT(90));
+                            LET(IDENT("y"),TYPE_IDENT(I32_T), INFIX(INT(90), I_ADD, INT(10)));
                             INFIX(
                                 INFIX(IDENT("x"), I_ADD, INT(300))
                                 , I_ADD, IDENT("y"))
