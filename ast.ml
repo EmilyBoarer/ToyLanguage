@@ -149,11 +149,11 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
 (* CONVERT TO PSEUDO ASM -------------------------------------------------------------------------------------------- *)
 
 type asm_instr =
-    | ASM_ADD of int * int * int (* rs1, rs2, rd *)
-    | ASM_ADDI of int * int * int (* rs1, rd, IMM *)
+    | ASM_ADD of int * int * int (* rd, rs1, rs2 *)
+    | ASM_ADDI of int * int * int (* rd, rs1, IMM *)
 (*    | ASM_LUI of int * int (* rd, upperIMM *) *)
-    | ASM_SLT of int * int * int (* rs1, rs2, rd TODO add SLTU variation*)
-    | ASM_SLTI of int * int * int (* rs1, rd, IMM TODO add SLTIU variation*)
+    | ASM_SLT of int * int * int (* rd, rs1, rs2 TODO add SLTU variation*)
+    | ASM_SLTI of int * int * int (* rd, rs1, IMM TODO add SLTIU variation*)
     | ASM_JAL of int * int (* rd, LabelRef TODO convert these to relative addresses with another pass later on.*)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_BLT of int * int * int (* rs1, rs2, LabelRef *)
@@ -199,20 +199,20 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         (match op with  (* TODO handle when imm is too long! *)
             | I_ADD -> (match ih1, ih2 with
                                    | I_H_REG(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs1 @ instrs2 @ [ASM_ADDI (r, rd, i)], vrb, I_H_REG(rd)
+                                       instrs1 @ instrs2 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
                                    | I_H_REG(r1), I_H_REG(r2) ->
-                                       instrs1 @ instrs2 @ [ASM_ADD (r1, r2, rd)], vrb, I_H_REG(rd)
+                                       instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (0,rs1,i1); ASM_ADDI (rs1, rd, i2)], vrb, I_H_REG(rd))
+                                       [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd))
             | I_LTHAN -> (match ih1, ih2 with
                                    | I_H_REG(r), I_H_IMM(i) ->
-                                       instrs1 @ [ASM_SLTI (r, rd, i)], vrb, I_H_REG(rd)
+                                       instrs1 @ [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs2 @ [ASM_ADDI (0,rs1,i); ASM_SLT (rs1, r, rd)], vrb, I_H_REG(rd)
+                                       instrs2 @ [ASM_ADDI (rs1, 0, i); ASM_SLT (rd, rs1, r)], vrb, I_H_REG(rd)
                                    | I_H_REG(r1), I_H_REG(r2) ->
-                                       instrs1 @ instrs2 @ [ASM_SLT (r1, r2, rd)], vrb, I_H_REG(rd)
+                                       instrs1 @ instrs2 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (0,rs1,i1); ASM_SLTI (rs1, rd, i2)], vrb, I_H_REG(rd))
+                                       [ASM_ADDI (rs1, 0, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd))
         )
     | INT(v), vrb ->
         [], vrb, I_H_IMM(v)
@@ -232,11 +232,11 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let instr, _, _ = compile (ast, VRB("0_result", rd)::vrb) in (instr, vrb, I_H_NONE) (* list functions as a stack *)
     | EVAL(INT(v)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
-        [ASM_ADDI (0, rd, v)], vrb, I_H_NONE
+        [ASM_ADDI (rd, 0, v)], vrb, I_H_NONE
     | EVAL(IDENT(s)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
         let rs1 = vrb_lookup (s, vrb) in
-        [ASM_ADDI (rs1, rd, 0)], vrb, I_H_NONE
+        [ASM_ADDI (rd, rs1, 0)], vrb, I_H_NONE
 
     | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *)
         let instrs2, _, _ = compile(ast2, vrb) in
@@ -249,9 +249,9 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in
         let instrsB = (match op, ih1, ih2 with
             | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BLT(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
-            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (0,rs2,i2); ASM_BLT(r1, rs2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (0,rs1,i1); ASM_BLT(rs1, r2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (0,rs1,i1); ASM_ADDI (0,rs2,i2); ASM_BLT(rs1, rs2, else_label)]
+            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (rs2, 0, i2); ASM_BLT(r1, rs2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (rs1, 0, i1); ASM_BLT(rs1, r2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rs2, 0, i2); ASM_BLT(rs1, rs2, else_label)]
             | _ -> failwith "ERROR: cannot optimise infix if conditional"
         ) in
         instrs1_1 @ instrs1_2 @ instrsB @
