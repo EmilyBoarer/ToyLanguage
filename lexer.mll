@@ -24,6 +24,6 @@ rule token = parse
   | "else"         { ELSE }
 
   | ['0'-'9']+ as lxm { INT(int_of_string lxm) }
-  | ['a'-'z']+ as lxm { IDENT(int_of_string lxm) }
+  | ['a'-'z' 'A'-'Z']+ as lxm { IDENT(lxm) }
 
   | eof            { raise Eof }

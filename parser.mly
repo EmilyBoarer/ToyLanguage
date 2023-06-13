@@ -1,5 +1,5 @@
 %token <int> INT
-%token <int> IDENT
+%token <string> IDENT
 %token PLUS LTHAN
 %token LPAREN RPAREN
 %token LBRACE RBRACE
@@ -10,7 +10,7 @@
 %left PLUS
 %nonassoc BRACKETS  /* highest precedence */
 %start main         /* the entry point */
-%type <int> main // TODO need to do something about this return type??
+%type <Ast.ast> main
 %%
 main:
   | seq                                 { $1 }
@@ -20,24 +20,25 @@ seq:
 ;
 i:
   | statement                           { $1 }
-  | statement SEMICOLON i               { $3 }
+  | statement SEMICOLON i               { Ast.SEQ([$1; $3]) }
 ;
 statement:
   | expr                                { $1 }
-  | IF expr seq ELSE seq                { $2 } /* TODO convert to IF(..) */
-  | WHILE expr seq                      { $2 } /* TODO convert to WHILE(..) */
-  | LET expr COLON typeexpr EQUALS expr { $2 } /* TODO convert to LET(..) */
-  | LET expr COLON typeexpr             { $2 } /* TODO convert to DECLARE(..) */
-  | expr EQUALS expr                    { $3 } /* TODO convert to ASSIGN(..) */
+  | IF expr expr ELSE expr              { Ast.IF($2, $3, $5) }
+  | WHILE expr expr                     { Ast.WHILE($2, $3) }
+  | LET expr COLON typeexpr EQUALS expr { Ast.LET($2, $4, $6) }
+  | LET expr COLON typeexpr             { Ast.DECLARE($2, $4) }
+  | expr EQUALS expr                    { Ast.ASSIGN($1, $3) }
 ;
 expr:
   | seq                                 { $1 }
-  | INT                                 { $1 }
+  | INT                                 { Ast.INT($1) }
+  | IDENT                               { Ast.IDENT($1) }
   | LPAREN expr RPAREN %prec BRACKETS   { $2 }
-  | expr PLUS expr                      { $3 }
-  | expr LTHAN expr                     { $3 }
+  | expr PLUS expr                      { Ast.INFIX($1, Ast.I_ADD, $3) }
+  | expr LTHAN expr                     { Ast.INFIX($1, Ast.I_LTHAN, $3) }
 ;
 typeexpr:
-  | I32_TYPE                            { 0 }
-  | U32_TYPE                            { 0 }
+  | I32_TYPE                            { Ast.TYPE_IDENT(Ast.I32_T) }
+  | U32_TYPE                            { Ast.TYPE_IDENT(Ast.U32_T) }
 ;
