@@ -31,23 +31,25 @@ type ast =
 
 (* SIMPLIFY AST & DESUGAR ------------------------------------------------------------------------------------------- *)
 
-let rec simplify_ast = function (* Convert LET, flatten SEQs *)
-    | LET (ast1, ast2, ast3) -> let ast1_ = (simplify_ast ast1) in  (*split let into declare and assign*)
+let rec simplify_ast = function (* Convert LET, flatten SEQs :-  ast, bool (not add eval) -> ast *)
+    | LET (ast1, ast2, ast3), _ -> let ast1_ = (simplify_ast (ast1, true)) in  (*split let into declare and assign*)
                                 SEQ ([
-                                    (DECLARE(ast1_, (simplify_ast ast2)));
-                                    (ASSIGN (ast1_, (simplify_ast ast3)))
+                                    (DECLARE(ast1_, (simplify_ast (ast2, false))));
+                                    (ASSIGN (ast1_, (simplify_ast (ast3, false))))
                                 ])
-    | SEQ ((SEQ(x))::t) -> let t2 = match (simplify_ast (SEQ(t))) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in (* flatten nested SEQ's into one *)
-                           let x2 = match (simplify_ast (SEQ(x))) with SEQ(x2) -> x2 | _ -> failwith "Error simplifying AST" in
+    | SEQ ((SEQ(x))::t), _ -> let t2 = match (simplify_ast (SEQ(t), false)) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in (* flatten nested SEQ's into one *)
+                           let x2 = match (simplify_ast (SEQ(x), false)) with SEQ(x2) -> x2 | _ -> failwith "Error simplifying AST" in
                            SEQ(x2@t2)
-    | SEQ (h::t) -> let h2 = match (simplify_ast h) with SEQ(h2) -> h2 | h2 -> [h2] in (* recurse over sequence *)
-                    let t2 = match (simplify_ast (SEQ(t))) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in
+    | SEQ (h::t), _ -> let h2 = match (simplify_ast (h, false)) with SEQ(h2) -> h2 | h2 -> [h2] in (* recurse over sequence *)
+                    let t2 = match (simplify_ast (SEQ(t), false)) with SEQ(t2) -> t2 | _ -> failwith "Error simplifying AST" in
                     SEQ(h2@t2)
-    | ASSIGN (ast1, ast2) -> ASSIGN (ast1, simplify_ast ast2)
-    | INFIX (ast1, ast2, ast3) -> INFIX(simplify_ast ast1, ast2, simplify_ast ast3)
-    | PRINT (ast) -> PRINT(simplify_ast ast)
+    | ASSIGN (ast1, ast2), _ -> ASSIGN (ast1, simplify_ast (ast2, false))
+    | INFIX (ast1, ast2, ast3), _ -> INFIX(simplify_ast (ast1, true), ast2, simplify_ast (ast3, true))
+    | PRINT (ast), _ -> PRINT(simplify_ast (ast, false))
+    | INT (ast), false -> EVAL(INT(ast))
+    | IDENT (ast), false -> EVAL(IDENT(ast))
     (* TODO remove SEQ of nothing! *)
-    | x -> x
+    | x, _ -> x
 
 (* TYPE CHECKING ---------------------------------------------------------------------------------------------------- *)
 
@@ -102,6 +104,7 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
             | [], _ -> [], vt
             | _, vt2 -> type_check (SEQ(t), vt2))
 
+    | EVAL (ast), vt -> type_check (ast, vt)
     | INT (_), vt -> [I32_T; U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
     | IDENT (str), vt -> let ts = types_of (str, vt) in
                          IDENT_T::ts, vt
@@ -206,7 +209,7 @@ NOTES:
 
 *)
 
-let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
+let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [VT("x", [I32_T])])
 
 
 (* let run = let code = SEQ([ *)
@@ -219,12 +222,13 @@ let simplify_then_type_check = function x -> type_check ((simplify_ast x), [])
 
 
 let run = let code = SEQ([
-                            LET(IDENT("x"),TYPE_IDENT(I32_T), EVAL(INT(60)));
-                            LET(IDENT("y"),TYPE_IDENT(I32_T), EVAL(INT(90)));
+                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(60));
+                            LET(IDENT("y"),TYPE_IDENT(I32_T), INT(90));
                             INFIX(
                                 INFIX(IDENT("x"), I_ADD, INT(300))
                                 , I_ADD, IDENT("y"))
                          ]) in
-                code,(simplify_ast code),(simplify_then_type_check code),(compile_ast (simplify_ast code))
+                code,(simplify_ast (code, false)),(simplify_then_type_check code)
+                ,(compile_ast (simplify_ast (code, false)))
 
 
