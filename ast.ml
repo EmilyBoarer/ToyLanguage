@@ -73,10 +73,6 @@ let rec intersection2 = function (* helper helper function *)
 let rec intersection = function (* helper function: intersection of two lists (of types)*)
     l1, l2 -> intersection2 (l1, l1, l2)
 
-let rec types_of = function (* helper function: return list of all types of identifier with name str *)
-    | str, VT(s, ts)::t -> if str = s then ts else types_of (str, t)
-    | _, [] -> []
-
 let rec contains_type = function (* helper function: returns true iff list of types contains given type *)
     | ty, h::t -> if ty = h then true else contains_type (ty, t)
     | _, [] -> false
@@ -112,7 +108,7 @@ let rec type_check = function (* ast node, variable_types -> acceptable_types li
 
     | EVAL (ast), vt -> type_check (ast, vt)
     | INT (_), vt -> [I32_T; U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
-    | IDENT (str), vt -> let ts = types_of (str, vt) in
+    | IDENT (str), vt -> let ts = vt_check (str, vt) in
                          IDENT_T::ts, vt
     | TYPE_IDENT (t), vt -> [t], vt
     | PRINT (ast), vt -> let ts, _ = type_check (ast, vt) in
@@ -314,23 +310,59 @@ MAIN future plan:
 - add loops
 - add functions
 - sort out pushing some values to the stack when running out of registers to hold data in!!
+- sort out what happens when something can be typed to multiple things
 - then, recursive functions
 - then, flesh out the number of implemented infix operators
 - custom user types (product and sum types)
 
+- check use before assignment, etc.. other similar safety things, statically
 
 *)
 
 let simplify_then_type_check = function x -> type_check ((simplify_ast (x, false)), [])
 
+(* Fibonacci:
+
+{
+    let a:u32 = 0;
+    let b:u32 = 1;
+    let t:u32;
+    while b < 100 {
+        t = b;
+        b = a+b;
+        a = t;
+    };
+    b
+}
+
+compiled, then manually transcribed to actual asm: *The order of args is different!!*
+    .text
+    main:
+            addi x5,  x0,  0
+            addi x6,  x0,  1
+    lab0:   slti x28,  x6, 100
+            beq  x28, x0,  lab1
+            addi x7,  x6,  0
+            add  x6,  x5,  x6
+            addi x5,  x7,  0
+            jal  x0,       lab0
+    lab1:   addi x10,  x6, 0
+
+runs properly and leaves 144 in x10!!
+on https://creatorsim.github.io/creator/
+*)
 
 let run = let code = SEQ([
-                            LET(IDENT("x"),TYPE_IDENT(I32_T), INT(10));
-                            WHILE( INFIX(IDENT("x"), I_LTHAN, INT(20)),
+                            LET(IDENT("a"),TYPE_IDENT(I32_T), INT(0));
+                            LET(IDENT("b"),TYPE_IDENT(I32_T), INT(1));
+                            DECLARE(IDENT("t"),TYPE_IDENT(I32_T));
+                            WHILE( INFIX(IDENT("b"), I_LTHAN, INT(100)),
                                 SEQ([
-                                    ASSIGN(IDENT("x"), INFIX(IDENT("x"), I_ADD, INT(1)));
-                                    INFIX(INT(1), I_ADD, INT(2))
+                                     ASSIGN(IDENT("t"), IDENT("b"));
+                                     ASSIGN(IDENT("b"), INFIX(IDENT("a"), I_ADD, IDENT("b")));
+                                     ASSIGN(IDENT("a"), IDENT("t"));
                                 ]));
+                            IDENT("b")
                          ]) in
                 code,(simplify_ast (code, false)),(simplify_then_type_check code)
                 ,(compile_ast (simplify_ast (code, false)))
