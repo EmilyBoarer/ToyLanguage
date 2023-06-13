@@ -1,22 +1,43 @@
 %token <int> INT
-%token PLUS MINUS TIMES DIV
+%token <int> IDENT
+%token PLUS LTHAN
 %token LPAREN RPAREN
-%token EOL
-%left PLUS MINUS        /* lowest precedence */
-%left TIMES DIV         /* medium precedence */
-%nonassoc UMINUS        /* highest precedence */
-%start main             /* the entry point */
-%type <int> main
+%token LBRACE RBRACE
+%token SEMICOLON COLON EQUALS LET
+%token WHILE IF ELSE
+%token I32_TYPE U32_TYPE
+%left LTHAN         /* lowest precedence */
+%left PLUS
+%nonassoc BRACKETS  /* highest precedence */
+%start main         /* the entry point */
+%type <int> main // TODO need to do something about this return type??
 %%
 main:
-    expr EOL                { $1 }
+  | seq                                 { $1 }
+;
+seq:
+  | LBRACE i RBRACE                     { $2 }
+;
+i:
+  | statement                           { $1 }
+  | statement SEMICOLON i               { $3 }
+;
+statement:
+  | expr                                { $1 }
+  | IF expr seq ELSE seq                { $2 } /* TODO convert to IF(..) */
+  | WHILE expr seq                      { $2 } /* TODO convert to WHILE(..) */
+  | LET expr COLON typeexpr EQUALS expr { $2 } /* TODO convert to LET(..) */
+  | LET expr COLON typeexpr             { $2 } /* TODO convert to DECLARE(..) */
+  | expr EQUALS expr                    { $3 } /* TODO convert to ASSIGN(..) */
 ;
 expr:
-    INT                     { $1 }
-  | LPAREN expr RPAREN      { $2 }
-  | expr PLUS expr          { $1 + $3 }
-  | expr MINUS expr         { $1 - $3 }
-  | expr TIMES expr         { $1 * $3 }
-  | expr DIV expr           { $1 / $3 }
-  | MINUS expr %prec UMINUS { - $2 }
+  | seq                                 { $1 }
+  | INT                                 { $1 }
+  | LPAREN expr RPAREN %prec BRACKETS   { $2 }
+  | expr PLUS expr                      { $3 }
+  | expr LTHAN expr                     { $3 }
+;
+typeexpr:
+  | I32_TYPE                            { 0 }
+  | U32_TYPE                            { 0 }
 ;
