@@ -14,7 +14,8 @@ type asm_instr =
     | ASM_JAL of int * int (* rd, LabelRef *)
     | ASM_J of int (* LabelRef *)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
-    | ASM_BGE of int * int * int (* rs1, rs2, LabelRef *)
+    | ASM_BNE of int * int * int (* rs1, rs2, LabelRef *)
+    | ASM_BLT of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_LABEL of int (* LabelRef *)
 
 type var_reg_binding = VRB of string * int (* string of identifier, int of register in register file *)
@@ -49,8 +50,8 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let rd = vrb_lookup ("0_result", vrb) in
 (*        let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in *)
         let rs1 = rd in (* since will be overwritten by this anyway! *)
-        let instrs1, vrb2, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
-        let VRB(_,rs2) = vrb_assign("0_rs2", vrb2) in
+        let instrs1, _, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
+        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
         let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
         (match op with  (* TODO handle when imm is too long! *)
             | I_ADD -> (match ih1, ih2 with
@@ -153,39 +154,18 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let rd = vrb_lookup (s, vrb) in
         let instr, _, _ = compile (ast, VRB("0_result", rd)::vrb) in (instr, vrb, I_H_NONE) (* list functions as a stack *)
 
-(* TODO: optimise the IF (and WHILE ?) conditionals using infix_helper return values! *)
-(*    | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *) *)
-(*        let instrs2, _, _ = compile(ast2, vrb) in *)
-(*        let instrs3, _, _ = compile(ast3, vrb) in *)
-(*        let else_label = new_label() in *)
-(*        let end_label = new_label() in *)
-(*        let VRB(_,rs1) = vrb_assign("0_rs1", vrb)  in *)
-(*        let instrs1_1, vrb2, ih1 = compile (inf1, VRB("0_result", rs1)::vrb) in *)
-(*        let VRB(_,rs2) = vrb_assign("0_rs1", vrb2) in *)
-(*        let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in *)
-(*        let instrsB = (match op, ih1, ih2 with *)
-(*            | I_LTHAN, I_H_REG_REF(r1), I_H_REG_REF(r2) -> [ASM_BGE(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *) *)
-(*            | I_LTHAN, I_H_REG_REF(r1), I_H_IMM(i2) -> [ASM_LI (rs2, i2); ASM_BGE(r1, rs2, else_label)] *)
-(*            | I_LTHAN, I_H_IMM(i1), I_H_REG_REF(r2) -> [ASM_LI (rs1, i1); ASM_BGE(rs1, r2, else_label)] *)
-(*            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_LI (rs2, i2); ASM_BGE(rs1, rs2, else_label)] *)
-(*            | _ -> failwith "ERROR: cannot optimise infix if conditional" *)
-(*        ) in *)
-(*        instrs1_1 @ instrs1_2 @ instrsB @ *)
-(*        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @ *)
-(*        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE *)
     | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
         (*conditional results can be stored in rd, since rd will be overwritten by the body anyway. saves allocating another register*)
         let rd = vrb_lookup ("0_result", vrb) in
-        let instrs1, _, _ = compile(ast1, vrb) in
         let instrs2, _, _ = compile(ast2, vrb) in
         let instrs3, _, _ = compile(ast3, vrb) in
         let else_label = new_label() in
         let end_label = new_label() in
-        instrs1 @ [ASM_BEQ(rd, 0, else_label)] @
+        (compile_optimised_infix_conditional vrb rd ast1 else_label) @
         instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @
         instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
         (*
-        branch condition = false .else
+        branch not condition .else
         <then> code
         jal .end, rd=0
         .else
@@ -195,22 +175,40 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
 
     | WHILE(ast1, ast2), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
-        let instrs1, _, _ = compile(ast1, vrb) in
         let instrs2, _, _ = compile(ast2, vrb) in
         let start_label = new_label() in
         let end_label = new_label() in
-        [ASM_LABEL(start_label)] @ instrs1 @
-        [ASM_BEQ(rd, 0, end_label)] @ instrs2 @
-        [ASM_J(start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
+        [ASM_LABEL(start_label)] @
+        (compile_optimised_infix_conditional vrb rd ast1 end_label) @
+        instrs2 @ [ASM_J(start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
         (*
         .start
-        branch condition = false .end
+        branch not condition .end
         code
         jal .start, rd=0
         .end
         *)
 
     | _ -> failwith "Can't compile that yet!"
+
+and compile_optimised_infix_conditional vrb rd ast unsatisfied_label = (match ast with
+    | INFIX(ast1,I_LTHAN,ast2) ->
+        let rs1 = rd in
+        let instrs1, _, _ = compile(ast1, VRB("0_result", rs1)::vrb) in
+        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+        let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
+        instrs1 @ instrs2 @ [ASM_BLT (rs2, rs1, unsatisfied_label)]
+    | INFIX(ast1,I_EQUAL,ast2) ->
+        let rs1 = rd in
+        let instrs1, _, _ = compile(ast1, VRB("0_result", rs1)::vrb) in
+        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+        let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
+        instrs1 @ instrs2 @ [ASM_BNE(rs1, rs2, unsatisfied_label)]
+    | _ ->
+        let rs1 = rd in
+        let instrs1, _, _ = compile(ast, vrb) in
+        instrs1 @ [ASM_BEQ(rs1, 0, unsatisfied_label)])
+
 
 
 let compile_ast = function ast -> compile (ast, [VRB("0_result", 10)]) (* TODO: when functions, use of result: a0=10 needs to be re-evaluated *)
@@ -245,11 +243,14 @@ let rec print_asm_helper = function
     | ASM_SEQZ(rd, rs1)::t ->
         Printf.printf "seqz x%i, x%i\n" rd rs1;
         print_asm_helper t
-    | ASM_BGE(rs1, rs2, label)::t ->
-        Printf.printf "bge x%i, x%i, lab%i\n" rs1 rs2 label;
-        print_asm_helper t
     | ASM_BEQ(rs1, rs2, label)::t ->
         Printf.printf "beq x%i, x%i, lab%i\n" rs1 rs2 label;
+        print_asm_helper t
+    | ASM_BNE(rs1, rs2, label)::t ->
+        Printf.printf "bne x%i, x%i, lab%i\n" rs1 rs2 label;
+        print_asm_helper t
+    | ASM_BLT(rs1, rs2, label)::t ->
+        Printf.printf "blt x%i, x%i, lab%i\n" rs1 rs2 label;
         print_asm_helper t
     | ASM_JAL(rd, label)::t ->
         Printf.printf "jal x%i, lab%i\n" rd label;
