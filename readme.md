@@ -1,5 +1,55 @@
 # Toy Language
 
+## Example: Fibonacci numbers
+
+### source code
+
+```
+{
+    let a:i32 = 1;
+    let b:i32 = 1;
+    let t:i32;
+    while (b < 100) {
+        t = b;
+        b = a+b;
+        a = t
+    };
+    b
+}
+```
+
+
+### asm
+
+```
+.text
+main:
+addi x5, x0, 1
+addi x6, x0, 1
+lab0:
+slti x28, x6, 100
+beq x28, x0, lab1
+addi x7, x6, 0
+add x6, x5, x6
+addi x5, x7, 0
+jal x0, lab0
+lab1:
+addi x10, x6, 0
+```
+
+## Use
+
+Compile the compiler from souce with
+
+> ./compile-the-compiler.sh
+
+Compile `file.lang` with
+
+> cat "file.lang" | ./compile
+
+The `lang` file extension is an arbitrary choice. 
+It simply stands for "language" 
+
 ## Compiler structure
 
 Source code > lexer > tokens
