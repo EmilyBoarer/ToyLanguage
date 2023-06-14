@@ -48,50 +48,70 @@ type infix_helper = I_H_NONE
 let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
     | INFIX(ast1, op, ast2), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
-(*        let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in *)
         let rs1 = rd in (* since will be overwritten by this anyway! *)
         let instrs1, _, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
-        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
-        let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
         (match op with  (* TODO handle when imm is too long! *)
-            | I_ADD -> (match ih1, ih2 with
-                                   | I_H_REG_REF(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG_REF(r) ->
-                                       [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
-                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
-                                       [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r), I_H_IMM(i) ->
-                                       instrs1 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
-                                   | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs2 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
-                                       instrs1 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
-                                       instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r1), I_H_REG(r2) ->
-                                       instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
-            | I_SUB -> (match ih1, ih2 with
-                                   | I_H_REG_REF(r), I_H_IMM(i) ->
-                                       [ASM_ADDI (rd, r, -i)], vrb, I_H_REG(rd) (* NOTE: how to handle this negative immediate!?? *)
-                                   | I_H_IMM(i), I_H_REG_REF(r) ->
-                                       instrs1 @ [ASM_SUB (rd, rs1, r)], vrb, I_H_REG(rd)
-                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
-                                       [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, -i2)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r), I_H_IMM(i) ->
-                                       instrs1 @ [ASM_ADDI (rd, r, -i)], vrb, I_H_REG(rd)
-                                   | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs2 @ [ASM_SUB (rd, rs1, r)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
-                                       instrs1 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
-                                       instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r1), I_H_REG(r2) ->
-                                       instrs1 @ instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
+            | I_ADD -> (match ih1 with
+                | I_H_REG_REF(r1) ->
+                    let rs2 = rd in
+                    let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                    (match ih2 with
+                        | I_H_IMM(i2) -> [ASM_ADDI (rd, r1, i2)], vrb, I_H_REG(rd)
+                        | I_H_REG(r2) -> instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                        | I_H_REG_REF(r2) -> [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                        )
+                | I_H_REG(r1) ->
+                    let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+                    let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                    (match ih2 with
+                        | I_H_IMM(i2) -> instrs1 @ [ASM_ADDI (rd, r1, i2)], vrb, I_H_REG(rd)
+                        | I_H_REG(r2) -> instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                        | I_H_REG_REF(r2) -> instrs1 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                        )
+                | I_H_IMM(i1) ->
+                    let rs2 = rd in
+                    let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                    (match ih2 with
+                        | I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                        | I_H_REG(r2) -> instrs2 @ [ASM_ADDI (rd, r2, i1)], vrb, I_H_REG(rd)
+                        | I_H_REG_REF(r2) -> [ASM_ADDI (rd, r2, i1)], vrb, I_H_REG(rd)
+                        )
+                | _ -> [], vrb, I_H_NONE) (* TODO: throw error *)
+
+            | I_SUB -> (match ih1 with
+                | I_H_REG_REF(r1) ->
+                    let rs2 = rd in
+                    let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                    (match ih2 with
+                        | I_H_IMM(i2) -> [ASM_ADDI (rd, r1, -i2)], vrb, I_H_REG(rd)
+                        | I_H_REG(r2) -> instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                        | I_H_REG_REF(r2) -> [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                        )
+                | I_H_REG(r1) ->
+                    let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+                    let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                    (match ih2 with
+                        | I_H_IMM(i2) -> instrs1 @ [ASM_ADDI (rd, r1, -i2)], vrb, I_H_REG(rd)
+                        | I_H_REG(r2) -> instrs1 @ instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                        | I_H_REG_REF(r2) -> instrs1 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                        )
+                | I_H_IMM(i1) ->
+                    let rs2 = rd in
+                    let _, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in (* test temporary compile, results discarded*)
+                    (match ih2 with
+                        | I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, -i2)], vrb, I_H_REG(rd)
+                                                (* special case: if imm, don't want to try to assign a new register,
+                                                   since could fail and break other things *)
+                        | _ ->
+                            let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+                            let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
+                            (match ih2 with
+                                | I_H_REG(r2) -> instrs2 @ [ASM_SUB (rd, rs1, r2)], vrb, I_H_REG(rd)
+                                | I_H_REG_REF(r2) -> instrs1 @ [ASM_SUB (rd, rs1, r2)], vrb, I_H_REG(rd)
+                                | _ -> [], vrb, I_H_NONE) (* TODO: throw error *)
+                        )
+                | _ -> [], vrb, I_H_NONE) (* TODO: throw error *)
+
             | I_LTHAN -> (match ih1, ih2 with
                                    | I_H_REG_REF(r), I_H_IMM(i) ->
                                        [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
@@ -195,23 +215,31 @@ and compile_optimised_infix_conditional vrb rd ast unsatisfied_label = (match as
     | INFIX(ast1,I_LTHAN,ast2) ->
         let rs1 = rd in
         let instrs1, _, ih1 = compile(ast1, VRB("0_result", rs1)::vrb) in
-        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
-        let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
         (match ih1 with
-            | I_H_REG_REF(r1) -> (match ih2 with
-                | I_H_REG_REF(r2) -> [ASM_BLT (r2, r1, unsatisfied_label)]
-                | _ -> instrs2 @ [ASM_BLT (rs2, r1, unsatisfied_label)])
-            | _ -> instrs1 @ instrs2 @ [ASM_BLT (rs2, rs1, unsatisfied_label)])
+            | I_H_REG_REF(r1) ->
+                let rs2 = rd in
+                let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
+                (match ih2 with
+                    | I_H_REG_REF(r2) -> [ASM_BLT (r2, r1, unsatisfied_label)]
+                    | _ -> instrs2 @ [ASM_BLT (rs2, r1, unsatisfied_label)])
+            | _ ->
+                let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+                let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
+                instrs1 @ instrs2 @ [ASM_BLT (rs2, rs1, unsatisfied_label)])
     | INFIX(ast1,I_EQUAL,ast2) ->
         let rs1 = rd in
         let instrs1, _, ih1 = compile(ast1, VRB("0_result", rs1)::vrb) in
-        let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
-        let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
         (match ih1 with
-            | I_H_REG_REF(r1) -> (match ih2 with
-                | I_H_REG_REF(r2) -> [ASM_BNE(r1, r2, unsatisfied_label)]
-                | _ -> instrs2 @ [ASM_BNE(r1, rs2, unsatisfied_label)])
-            | _ -> instrs1 @ instrs2 @ [ASM_BNE(rs1, rs2, unsatisfied_label)])
+            | I_H_REG_REF(r1) ->
+                let rs2 = rd in
+                let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
+                (match ih2 with
+                    | I_H_REG_REF(r2) -> [ASM_BNE(r1, r2, unsatisfied_label)]
+                    | _ -> instrs2 @ [ASM_BNE(r1, rs2, unsatisfied_label)])
+            | _ ->
+                let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
+                let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
+                instrs1 @ instrs2 @ [ASM_BNE(rs1, rs2, unsatisfied_label)])
     | _ ->
         let rs1 = rd in
         let instrs1, _, _ = compile(ast, vrb) in
