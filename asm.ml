@@ -69,6 +69,8 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         )
     | INT(v), vrb ->
         [], vrb, I_H_IMM(v)
+    | BOOL(v), vrb ->
+        [], vrb, I_H_IMM((match v with true -> 1 | false -> 0))
     | IDENT(s), vrb ->
         let reg = vrb_lookup (s, vrb) in
         [], vrb, I_H_REG(reg)
@@ -78,7 +80,7 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let instrs1, vrb2, _ = compile(h, vrb) in
         let instrs2, _, _    = compile(SEQ(t), vrb2) in
         instrs1@instrs2, vrb, I_H_NONE
-    | DECLARE(IDENT(s), TYPE_IDENT(I32_T)), vrb -> (* TODO account for type when managing code! *)
+    | DECLARE(IDENT(s), TYPE_IDENT(_)), vrb -> (* TODO account for type when managing code! *)
         [], (vrb_assign(s, vrb))::vrb, I_H_NONE
     | ASSIGN(IDENT(s), ast), vrb ->
         let rd = vrb_lookup (s, vrb) in
@@ -86,6 +88,9 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
     | EVAL(INT(v)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
         [ASM_LI (rd, v)], vrb, I_H_NONE
+    | EVAL(BOOL(v)), vrb ->
+        let rd = vrb_lookup ("0_result", vrb) in
+        [ASM_LI (rd, (match v with true -> 1 | false -> 0))], vrb, I_H_NONE
     | EVAL(IDENT(s)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
         let rs1 = vrb_lookup (s, vrb) in

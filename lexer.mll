@@ -20,9 +20,12 @@ rule token = parse
   | ':'            { COLON }
   | "i32"          { I32_TYPE }
   | "u32"          { U32_TYPE }
+  | "bool"         { BOOL_TYPE }
   | "while"        { WHILE }
   | "if"           { IF }
   | "else"         { ELSE }
+  | "true"         { TRUE }
+  | "false"        { FALSE }
 
   | ['0'-'9']+ as lxm { INT(int_of_string lxm) }
   | ['a'-'z' 'A'-'Z']+ as lxm { IDENT(lxm) }

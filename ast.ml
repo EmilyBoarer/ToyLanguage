@@ -22,6 +22,7 @@ type ast =
     | ASSIGN of ast * ast    (* x = 5 *)
     | SEQ of (ast list)      (* {thing1; thing2;} (last semicolon optional)*)
     | INT of int             (* 5 *)
+    | BOOL of bool           (* true *)
     | IDENT of string        (* x *)
     | TYPE_IDENT of types    (* u32 *)
     | INFIX of ast * infix_operations * ast     (* x+3  or   a<<1   etc..*)

@@ -7,6 +7,7 @@ type aast =
     | ASSIGN of annotation * aast * aast    (* x = 5 *)
     | SEQ of annotation * (aast list)      (* {thing1; thing2;} (last semicolon optional)*)
     | INT of annotation * int             (* 5 *)
+    | BOOL of annotation * bool           (* true *)
     | IDENT of annotation * string        (* x *)
     | TYPE_IDENT of annotation * Ast.types    (* u32 *)
     | INFIX of annotation * aast * Ast.infix_operations * aast     (* x+3  or   a<<1   etc..*)

@@ -6,6 +6,7 @@ let rec convert_aast_to_ast = function
     | Aast.ASSIGN (_,a,b) -> Ast.ASSIGN (convert_aast_to_ast a, convert_aast_to_ast b)
     | Aast.SEQ (_,a)      -> Ast.SEQ (List.map convert_aast_to_ast a)
     | Aast.INT (_,a)      -> Ast.INT (a)
+    | Aast.BOOL (_,a)     -> Ast.BOOL (a)
     | Aast.IDENT (_,a)    -> Ast.IDENT (a)
     | Aast.TYPE_IDENT(_,a)-> Ast.TYPE_IDENT (a)
     | Aast.INFIX (_,a,b,c)-> Ast.INFIX (convert_aast_to_ast a, b, convert_aast_to_ast c)

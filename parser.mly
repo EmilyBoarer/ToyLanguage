@@ -11,7 +11,8 @@ let anno x = Aast.A(Parsing.symbol_start_pos x)
 %token LBRACE RBRACE
 %token SEMICOLON COLON EQUALS LET
 %token WHILE IF ELSE
-%token I32_TYPE U32_TYPE
+%token TRUE FALSE
+%token I32_TYPE U32_TYPE BOOL_TYPE
 %left LTHAN         /* lowest precedence */
 %left PLUS
 %nonassoc BRACKETS  /* highest precedence */
@@ -22,7 +23,7 @@ main:
   | seq                                 { $1 }
 ;
 seq:
-  | LBRACE i RBRACE                     { $2 }
+  | LBRACE i RBRACE %prec BRACKETS      { $2 }
 ;
 i:
   | statement                           { Aast.SEQ(anno(), [$1]) }
@@ -39,6 +40,8 @@ statement:
 expr:
   | seq                                 { $1 }
   | INT                                 { Aast.INT(anno(), $1) }
+  | TRUE                                { Aast.BOOL(anno(), true) }
+  | FALSE                               { Aast.BOOL(anno(), false) }
   | IDENT                               { Aast.IDENT(anno(), $1) }
   | LPAREN expr RPAREN %prec BRACKETS   { $2 }
   | expr PLUS expr                      { Aast.INFIX(anno(), $1, Ast.I_ADD, $3) }
@@ -47,4 +50,5 @@ expr:
 typeexpr:
   | I32_TYPE                            { Aast.TYPE_IDENT(anno(), Ast.I32_T) }
   | U32_TYPE                            { Aast.TYPE_IDENT(anno(), Ast.U32_T) }
+  | BOOL_TYPE                           { Aast.TYPE_IDENT(anno(), Ast.BOOL_T) }
 ;

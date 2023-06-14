@@ -55,7 +55,8 @@ let rec type_check = function (* aast node, variable_types -> acceptable_types l
             | _, vt2 -> type_check (SEQ(a, t), vt2))
 
     | EVAL (_, aast), vt -> type_check (aast, vt)
-    | INT (_, _), vt -> [I32_T; U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
+    | INT (_, _), vt -> [Ast.I32_T; Ast.U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
+    | BOOL (_, _), vt -> [Ast.BOOL_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
     | IDENT (a, str), vt ->
         let ts = vt_check (str, vt) in
         if ts = [] then Errors.era("ERROR T000: ident not declared", a) else IDENT_T::ts, vt
