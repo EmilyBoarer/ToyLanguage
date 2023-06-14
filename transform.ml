@@ -10,7 +10,6 @@ let rec convert_aast_to_ast = function
     | Aast.IDENT (_,a)    -> Ast.IDENT (a)
     | Aast.TYPE_IDENT(_,a)-> Ast.TYPE_IDENT (a)
     | Aast.INFIX (_,a,b,c)-> Ast.INFIX (convert_aast_to_ast a, b, convert_aast_to_ast c)
-    | Aast.EVAL (_,a)     -> Ast.EVAL (convert_aast_to_ast a)
     | Aast.IF (_,a,b,c)   -> Ast.IF (convert_aast_to_ast a, convert_aast_to_ast b, convert_aast_to_ast c)
     | Aast.WHILE (_,a,b)  -> Ast.WHILE (convert_aast_to_ast a, convert_aast_to_ast b)
 

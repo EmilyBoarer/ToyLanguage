@@ -4,11 +4,13 @@ open Ast
 
 type asm_instr =
     | ASM_ADD of int * int * int (* rd, rs1, rs2 *)
+    | ASM_SUB of int * int * int (* rd, rs1, rs2 *)
     | ASM_ADDI of int * int * int (* rd, rs1, IMM *)
     | ASM_MV of int * int (* rd, rs1 *)
     | ASM_LI of int * int (* rd, IMM *)
-    | ASM_SLT of int * int * int (* rd, rs1, rs2 TODO add SLTU variation*)
-    | ASM_SLTI of int * int * int (* rd, rs1, IMM TODO add SLTIU variation*)
+    | ASM_SLT of int * int * int (* rd, rs1, rs2 *)
+    | ASM_SLTI of int * int * int (* rd, rs1, IMM *)
+    | ASM_SEQZ of int * int (* rd, rs1 *)
     | ASM_JAL of int * int (* rd, LabelRef *)
     | ASM_J of int (* LabelRef *)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
@@ -37,7 +39,10 @@ TODO: what about when there aren't enough registers!?
 TODO: determine types so know how to treat them in the asm
 *)
 
-type infix_helper = I_H_NONE | I_H_IMM of int | I_H_REG of int
+type infix_helper = I_H_NONE
+    | I_H_IMM of int       (* got from INT() BOOL() : the value of an immediate *)
+    | I_H_REG_REF of int   (* got from IDENT() :      a pointer to the register *)
+    | I_H_REG of int       (* got from INFIX() :      a pointer to the register, and there is associated code that needs to be used *)
 
 let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
     | INFIX(ast1, op, ast2), vrb ->
@@ -48,32 +53,93 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let rd = vrb_lookup ("0_result", vrb) in
         (match op with  (* TODO handle when imm is too long! *)
             | I_ADD -> (match ih1, ih2 with
-                                   | I_H_REG(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs1 @ instrs2 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
-                                   | I_H_REG(r1), I_H_REG(r2) ->
-                                       instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG_REF(r) ->
+                                       [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
+                                       [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
                                        [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r), I_H_IMM(i) ->
+                                       instrs1 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i), I_H_REG(r) ->
+                                       instrs2 @ [ASM_ADDI (rd, r, i)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
+                                       instrs1 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
+                                       instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG(r2) ->
+                                       instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
+            | I_SUB -> (match ih1, ih2 with
+                                   | I_H_REG_REF(r), I_H_IMM(i) ->
+                                       [ASM_ADDI (rd, r, -i)], vrb, I_H_REG(rd) (* NOTE: how to handle this negative immediate!?? *)
+                                   | I_H_IMM(i), I_H_REG_REF(r) ->
+                                       instrs1 @ [ASM_SUB (rd, rs1, r)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
+                                       [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i1), I_H_IMM(i2) ->
+                                       [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, -i2)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r), I_H_IMM(i) ->
+                                       instrs1 @ [ASM_ADDI (rd, r, -i)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i), I_H_REG(r) ->
+                                       instrs2 @ [ASM_SUB (rd, rs1, r)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
+                                       instrs1 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
+                                       instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG(r2) ->
+                                       instrs1 @ instrs2 @ [ASM_SUB (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
             | I_LTHAN -> (match ih1, ih2 with
+                                   | I_H_REG_REF(r), I_H_IMM(i) ->
+                                       [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i), I_H_REG_REF(r) ->
+                                       [ASM_LI (rs1, i); ASM_SLT (rd, rs1, r)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
+                                       [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i1), I_H_IMM(i2) ->
+                                       [ASM_LI (rs1, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd)
                                    | I_H_REG(r), I_H_IMM(i) ->
                                        instrs1 @ [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i), I_H_REG(r) ->
                                        instrs2 @ [ASM_LI (rs1, i); ASM_SLT (rd, rs1, r)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
+                                       instrs1 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
+                                       instrs2 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_REG(r1), I_H_REG(r2) ->
                                        instrs1 @ instrs2 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
-                                   | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_LI (rs1, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd)
                                    | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
-            | _ -> [], vrb, I_H_NONE (* TODO: implement!*)
+            | I_EQUAL -> (match ih1, ih2 with (* == -> sub, =0? TODO: optimisation rs1 = rd? rather than allocating a new rs1 ??*)
+                                   | I_H_REG_REF(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG_REF(r) ->
+                                       [ASM_ADDI (rd, r, -i); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd) (* subtraction order doesn't make a difference, since signed operation *)
+                                   | I_H_REG_REF(r1), I_H_REG_REF(r2) ->
+                                       [ASM_SUB (rd, r1, r2); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i1), I_H_IMM(i2) ->
+                                       [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, -i2); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r), I_H_IMM(i) ->
+                                       instrs1 @ [ASM_ADDI (rd, r, -i); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_IMM(i), I_H_REG(r) ->
+                                       instrs2 @ [ASM_SUB (rd, rs1, r); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG_REF(r2) ->
+                                       instrs1 @ [ASM_SUB (rd, r1, r2); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_REG_REF(r1), I_H_REG(r2) ->
+                                       instrs2 @ [ASM_SUB (rd, r1, r2); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | I_H_REG(r1), I_H_REG(r2) ->
+                                       instrs1 @ instrs2 @ [ASM_SUB (rd, r1, r2); ASM_SEQZ (rd, rd)], vrb, I_H_REG(rd)
+                                   | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
         )
     | INT(v), vrb ->
-        [], vrb, I_H_IMM(v)
+        let rd = vrb_lookup ("0_result", vrb) in
+        [ASM_LI (rd, v)], vrb, I_H_IMM(v)
     | BOOL(v), vrb ->
-        [], vrb, I_H_IMM((match v with true -> 1 | false -> 0))
+        let rd = vrb_lookup ("0_result", vrb) in
+        let b = (match v with true -> 1 | false -> 0) in
+        [ASM_LI (rd, b)], vrb, I_H_IMM(b)
     | IDENT(s), vrb ->
-        let reg = vrb_lookup (s, vrb) in
-        [], vrb, I_H_REG(reg)
+        let rd = vrb_lookup ("0_result", vrb) in
+        let rs1 = vrb_lookup (s, vrb) in
+        [ASM_MV (rd, rs1)], vrb, I_H_REG_REF(rs1)
 
     | SEQ(h::[]), vrb -> compile (h, vrb)
     | SEQ(h::t), vrb ->
@@ -85,36 +151,27 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
     | ASSIGN(IDENT(s), ast), vrb ->
         let rd = vrb_lookup (s, vrb) in
         let instr, _, _ = compile (ast, VRB("0_result", rd)::vrb) in (instr, vrb, I_H_NONE) (* list functions as a stack *)
-    | EVAL(INT(v)), vrb ->
-        let rd = vrb_lookup ("0_result", vrb) in
-        [ASM_LI (rd, v)], vrb, I_H_NONE
-    | EVAL(BOOL(v)), vrb ->
-        let rd = vrb_lookup ("0_result", vrb) in
-        [ASM_LI (rd, (match v with true -> 1 | false -> 0))], vrb, I_H_NONE
-    | EVAL(IDENT(s)), vrb ->
-        let rd = vrb_lookup ("0_result", vrb) in
-        let rs1 = vrb_lookup (s, vrb) in
-        [ASM_MV (rd, rs1)], vrb, I_H_NONE
 
-    | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *)
-        let instrs2, _, _ = compile(ast2, vrb) in
-        let instrs3, _, _ = compile(ast3, vrb) in
-        let else_label = new_label() in
-        let end_label = new_label() in
-        let VRB(_,rs1) = vrb_assign("0_rs1", vrb)  in
-        let instrs1_1, vrb2, ih1 = compile (inf1, VRB("0_result", rs1)::vrb) in
-        let VRB(_,rs2) = vrb_assign("0_rs1", vrb2) in
-        let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in
-        let instrsB = (match op, ih1, ih2 with
-            | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BGE(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
-            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_LI (rs2, i2); ASM_BGE(r1, rs2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_LI (rs1, i1); ASM_BGE(rs1, r2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_LI (rs2, i2); ASM_BGE(rs1, rs2, else_label)]
-            | _ -> failwith "ERROR: cannot optimise infix if conditional"
-        ) in
-        instrs1_1 @ instrs1_2 @ instrsB @
-        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @
-        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
+(* TODO: optimise the IF (and WHILE ?) conditionals using infix_helper return values! *)
+(*    | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *) *)
+(*        let instrs2, _, _ = compile(ast2, vrb) in *)
+(*        let instrs3, _, _ = compile(ast3, vrb) in *)
+(*        let else_label = new_label() in *)
+(*        let end_label = new_label() in *)
+(*        let VRB(_,rs1) = vrb_assign("0_rs1", vrb)  in *)
+(*        let instrs1_1, vrb2, ih1 = compile (inf1, VRB("0_result", rs1)::vrb) in *)
+(*        let VRB(_,rs2) = vrb_assign("0_rs1", vrb2) in *)
+(*        let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in *)
+(*        let instrsB = (match op, ih1, ih2 with *)
+(*            | I_LTHAN, I_H_REG_REF(r1), I_H_REG_REF(r2) -> [ASM_BGE(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *) *)
+(*            | I_LTHAN, I_H_REG_REF(r1), I_H_IMM(i2) -> [ASM_LI (rs2, i2); ASM_BGE(r1, rs2, else_label)] *)
+(*            | I_LTHAN, I_H_IMM(i1), I_H_REG_REF(r2) -> [ASM_LI (rs1, i1); ASM_BGE(rs1, r2, else_label)] *)
+(*            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_LI (rs2, i2); ASM_BGE(rs1, rs2, else_label)] *)
+(*            | _ -> failwith "ERROR: cannot optimise infix if conditional" *)
+(*        ) in *)
+(*        instrs1_1 @ instrs1_2 @ instrsB @ *)
+(*        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @ *)
+(*        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE *)
     | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
         let VRB(s,rd2) = vrb_assign("0_result", vrb) in
         let instrs1, _, _ = compile(ast1, VRB(s, rd2)::vrb) in
@@ -174,11 +231,17 @@ let rec print_asm_helper = function
     | ASM_ADD(rd, rs1, rs2)::t ->
         Printf.printf "add x%i, x%i, x%i\n" rd rs1 rs2;
         print_asm_helper t
+    | ASM_SUB(rd, rs1, rs2)::t ->
+        Printf.printf "sub x%i, x%i, x%i\n" rd rs1 rs2;
+        print_asm_helper t
     | ASM_SLTI(rd, rs1, imm)::t ->
         Printf.printf "slti x%i, x%i, %i\n" rd rs1 imm;
         print_asm_helper t
     | ASM_SLT(rd, rs1, rs2)::t ->
         Printf.printf "slt x%i, x%i, x%i\n" rd rs1 rs2;
+        print_asm_helper t
+    | ASM_SEQZ(rd, rs1)::t ->
+        Printf.printf "seqz x%i, x%i\n" rd rs1;
         print_asm_helper t
     | ASM_BGE(rs1, rs2, label)::t ->
         Printf.printf "bge x%i, x%i, lab%i\n" rs1 rs2 label;

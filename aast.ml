@@ -11,6 +11,5 @@ type aast =
     | IDENT of annotation * string        (* x *)
     | TYPE_IDENT of annotation * Ast.types    (* u32 *)
     | INFIX of annotation * aast * Ast.infix_operations * aast     (* x+3  or   a<<1   etc..*)
-    | EVAL of annotation * aast
     | IF of annotation * aast * aast * aast  (* if condition then seq1 else seq2*)
     | WHILE of annotation * aast * aast     (* while condition seq *)

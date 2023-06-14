@@ -6,10 +6,10 @@ exception Eof
 rule token = parse
     [' ' '\t' '\n']     { token lexbuf }     (* skip blanks *)
   | '+'            { PLUS }
-(*  | '-'            { MINUS } *)
-(*  | '*'            { TIMES } *)
-(*  | '/'            { DIV } *)
+  | '-'            { MINUS }
   | '<'            { LTHAN }
+  | '>'            { GTHAN }
+  | "=="           { EQUALITY }
   | '('            { LPAREN }
   | ')'            { RPAREN }
   | '{'            { LBRACE }

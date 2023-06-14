@@ -54,7 +54,6 @@ let rec type_check = function (* aast node, variable_types -> acceptable_types l
             | [], _ -> Errors.era("ERROR T000: sequence item does not type", a)
             | _, vt2 -> type_check (SEQ(a, t), vt2))
 
-    | EVAL (_, aast), vt -> type_check (aast, vt)
     | INT (_, _), vt -> [Ast.I32_T; Ast.U32_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
     | BOOL (_, _), vt -> [Ast.BOOL_T], vt (* allow for multiple different integer representations. TODO check that each int is representable under the given range e.g. disallowing u32 for negative numbers *)
     | IDENT (a, str), vt ->
@@ -62,7 +61,7 @@ let rec type_check = function (* aast node, variable_types -> acceptable_types l
         if ts = [] then Errors.era("ERROR T000: ident not declared", a) else IDENT_T::ts, vt
     | TYPE_IDENT (_, t), vt -> [t], vt
     | INFIX (a, aast1, op, aast2), vt -> (match op with
-        | I_ADD | I_SUB | I_MULT | I_DIV -> let ts1, _ = type_check (aast1, vt) in
+        | I_ADD | I_SUB                  -> let ts1, _ = type_check (aast1, vt) in
                                             let ts2, _ = type_check (aast2, vt) in
                                             let i1 = intersection ([Ast.U32_T; Ast.I32_T], ts1) in
                                             let i2 = intersection (ts1, ts2) in
@@ -76,13 +75,20 @@ let rec type_check = function (* aast node, variable_types -> acceptable_types l
                                             if i1 = [] then Errors.era("ERROR T000: infix operand 1's type is not compatible with operator", a)
                                             else if i2 = [] then Errors.era("ERROR T000: infix operand 2's type is not compatible with operand 1's type", a)
                                             else [BOOL_T], vt
-        | I_LSHIFT | I_RSHIFT            -> let ts1, _ = type_check (aast1, vt) in
+        | I_EQUAL                        -> let ts1, _ = type_check (aast1, vt) in
                                             let ts2, _ = type_check (aast2, vt) in
-                                            let i1 = intersection ([Ast.U32_T; Ast.I32_T], ts1) in
-                                            let i2 = intersection ([Ast.U32_T], ts2) in
+                                            let i1 = intersection ([Ast.U32_T; Ast.I32_T; Ast.BOOL_T], ts1) in
+                                            let i2 = intersection (ts1, ts2) in
                                             if i1 = [] then Errors.era("ERROR T000: infix operand 1's type is not compatible with operator", a)
-                                            else if i2 = [] then Errors.era("ERROR T000: infix operand 2's type is not compatible with operator", a)
-                                            else i1, vt
+                                            else if i2 = [] then Errors.era("ERROR T000: infix operand 2's type is not compatible with operand 1's type", a)
+                                            else [BOOL_T], vt
+(*        | I_LSHIFT | I_RSHIFT            -> let ts1, _ = type_check (aast1, vt) in *)
+(*                                            let ts2, _ = type_check (aast2, vt) in *)
+(*                                            let i1 = intersection ([Ast.U32_T; Ast.I32_T], ts1) in *)
+(*                                            let i2 = intersection ([Ast.U32_T], ts2) in *)
+(*                                            if i1 = [] then Errors.era("ERROR T000: infix operand 1's type is not compatible with operator", a) *)
+(*                                            else if i2 = [] then Errors.era("ERROR T000: infix operand 2's type is not compatible with operator", a) *)
+(*                                            else i1, vt *)
     )
     | IF (a, aast1, aast2, aast3), vt ->
         let ts1, _ = type_check (aast1, vt) in

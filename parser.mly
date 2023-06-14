@@ -6,16 +6,20 @@ let anno x = Aast.A(Parsing.symbol_start_pos x)
 
 %token <int> INT
 %token <string> IDENT
-%token PLUS LTHAN
+%token PLUS MINUS
+%token LTHAN GTHAN EQUALITY
 %token LPAREN RPAREN
 %token LBRACE RBRACE
 %token SEMICOLON COLON EQUALS LET
 %token WHILE IF ELSE
 %token TRUE FALSE
 %token I32_TYPE U32_TYPE BOOL_TYPE
-%left LTHAN         /* lowest precedence */
-%left PLUS
+
+%left EQUALITY    /* lowest precedence */
+%left LTHAN GTHAN
+%left PLUS MINUS
 %nonassoc BRACKETS  /* highest precedence */
+
 %start main         /* the entry point */
 %type <Aast.aast> main
 %%
@@ -45,7 +49,10 @@ expr:
   | IDENT                               { Aast.IDENT(anno(), $1) }
   | LPAREN expr RPAREN %prec BRACKETS   { $2 }
   | expr PLUS expr                      { Aast.INFIX(anno(), $1, Ast.I_ADD, $3) }
+  | expr MINUS expr                     { Aast.INFIX(anno(), $1, Ast.I_SUB, $3) }
   | expr LTHAN expr                     { Aast.INFIX(anno(), $1, Ast.I_LTHAN, $3) }
+  | expr GTHAN expr                     { Aast.INFIX(anno(), $3, Ast.I_LTHAN, $1) }
+  | expr EQUALITY expr                  { Aast.INFIX(anno(), $1, Ast.I_EQUAL, $3) }
 ;
 typeexpr:
   | I32_TYPE                            { Aast.TYPE_IDENT(anno(), Ast.I32_T) }

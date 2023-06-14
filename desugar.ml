@@ -4,14 +4,15 @@ open Aast
 (*
 - Convert LET into DECLARE and ASSIGN
 - flatten SEQs,
-- EVAL INTs and IDENTs
 
 TODO refactor
 TODO give nicer errors
+
+TODO remove ineccesary bool from second part of tuple - eval no longer used!
 *)
 
 let rec desugar_aast = function (* aast, bool ('not add eval') -> aast *)
-    | LET (a, aast1, aast2, aast3), _ -> let aast1_ = (desugar_aast (aast1, true)) in  (*split let into declare and assign*)
+    | LET (a, aast1, aast2, aast3), _ -> let aast1_ = (desugar_aast (aast1, false)) in  (*split let into declare and assign*)
                                 SEQ (a, [
                                     (DECLARE(a, aast1_, (desugar_aast (aast2, false))));
                                     (ASSIGN (a, aast1_, (desugar_aast (aast3, false))))
@@ -26,7 +27,4 @@ let rec desugar_aast = function (* aast, bool ('not add eval') -> aast *)
     | INFIX (a, aast1, op, aast3), _ -> INFIX(a, desugar_aast (aast1, true), op, desugar_aast (aast3, true))
     | IF (a, aast1, aast2, aast3), _ -> IF(a, desugar_aast (aast1, false), desugar_aast (aast2, false), desugar_aast (aast3, false))
     | WHILE (a, aast1, aast2), _ -> WHILE(a, desugar_aast (aast1, false), desugar_aast (aast2, false))
-    | INT (a, x), false -> EVAL(a, INT(a, x))
-    | BOOL (a, x), false -> EVAL(a, BOOL(a, x))
-    | IDENT (a, s), false -> EVAL(a, IDENT(a, s))
     | x, _ -> x
