@@ -46,11 +46,12 @@ type infix_helper = I_H_NONE
 
 let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_helper -> reversed asm listing *)
     | INFIX(ast1, op, ast2), vrb ->
-        let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in
+        let rd = vrb_lookup ("0_result", vrb) in
+(*        let VRB(_,rs1) = vrb_assign("0_rs1", vrb) in *)
+        let rs1 = rd in (* since will be overwritten by this anyway! *)
         let instrs1, vrb2, ih1 = compile (ast1, VRB("0_result", rs1)::vrb) in
         let VRB(_,rs2) = vrb_assign("0_rs2", vrb2) in
         let instrs2, _, ih2 = compile (ast2, VRB("0_result", rs2)::vrb) in
-        let rd = vrb_lookup ("0_result", vrb) in
         (match op with  (* TODO handle when imm is too long! *)
             | I_ADD -> (match ih1, ih2 with
                                    | I_H_REG_REF(r), I_H_IMM(i) | I_H_IMM(i), I_H_REG_REF(r) ->
@@ -173,13 +174,14 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
 (*        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @ *)
 (*        instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE *)
     | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
-        let VRB(s,rd2) = vrb_assign("0_result", vrb) in
-        let instrs1, _, _ = compile(ast1, VRB(s, rd2)::vrb) in
+        (*conditional results can be stored in rd, since rd will be overwritten by the body anyway. saves allocating another register*)
+        let rd = vrb_lookup ("0_result", vrb) in
+        let instrs1, _, _ = compile(ast1, vrb) in
         let instrs2, _, _ = compile(ast2, vrb) in
         let instrs3, _, _ = compile(ast3, vrb) in
         let else_label = new_label() in
         let end_label = new_label() in
-        instrs1 @ [ASM_BEQ(rd2, 0, else_label)] @
+        instrs1 @ [ASM_BEQ(rd, 0, else_label)] @
         instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @
         instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
         (*
@@ -192,21 +194,21 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         *)
 
     | WHILE(ast1, ast2), vrb ->
-            let VRB(s,rd2) = vrb_assign("0_result", vrb) in
-            let instrs1, _, _ = compile(ast1, VRB(s, rd2)::vrb) in
-            let instrs2, _, _ = compile(ast2, VRB("0_ignore", rd2)::vrb) in
-            let start_label = new_label() in
-            let end_label = new_label() in
-            [ASM_LABEL(start_label)] @ instrs1 @
-            [ASM_BEQ(rd2, 0, end_label)] @ instrs2 @
-            [ASM_J(start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
-            (*
-            .start
-            branch condition = false .end
-            code
-            jal .start, rd=0
-            .end
-            *)
+        let rd = vrb_lookup ("0_result", vrb) in
+        let instrs1, _, _ = compile(ast1, vrb) in
+        let instrs2, _, _ = compile(ast2, vrb) in
+        let start_label = new_label() in
+        let end_label = new_label() in
+        [ASM_LABEL(start_label)] @ instrs1 @
+        [ASM_BEQ(rd, 0, end_label)] @ instrs2 @
+        [ASM_J(start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
+        (*
+        .start
+        branch condition = false .end
+        code
+        jal .start, rd=0
+        .end
+        *)
 
     | _ -> failwith "Can't compile that yet!"
 
