@@ -24,28 +24,28 @@
 ```
 .text
 main:
-addi x5, x0, 1
-addi x6, x0, 1
+li x5, 1
+li x6, 1
 lab0:
 slti x28, x6, 100
 beq x28, x0, lab1
-addi x7, x6, 0
+mv x7, x6
 add x6, x5, x6
-addi x5, x7, 0
-jal x0, lab0
+mv x5, x7
+j lab0
 lab1:
-addi x10, x6, 0
+mv x10, x6
 ```
 
 ## Use
 
 Compile the compiler from souce with
 
-> ./compile-the-compiler.sh
+```./compile-the-compiler.sh```
 
 Compile `file.lang` with
 
-> cat "file.lang" | ./compile
+```cat "file.lang" | ./compiler```
 
 The `lang` file extension is an arbitrary choice. 
 It simply stands for "language" 

@@ -5,9 +5,12 @@ open Ast
 type asm_instr =
     | ASM_ADD of int * int * int (* rd, rs1, rs2 *)
     | ASM_ADDI of int * int * int (* rd, rs1, IMM *)
+    | ASM_MV of int * int (* rd, rs1 *)
+    | ASM_LI of int * int (* rd, IMM *)
     | ASM_SLT of int * int * int (* rd, rs1, rs2 TODO add SLTU variation*)
     | ASM_SLTI of int * int * int (* rd, rs1, IMM TODO add SLTIU variation*)
     | ASM_JAL of int * int (* rd, LabelRef *)
+    | ASM_J of int (* LabelRef *)
     | ASM_BEQ of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_BGE of int * int * int (* rs1, rs2, LabelRef *)
     | ASM_LABEL of int (* LabelRef *)
@@ -50,17 +53,17 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
                                    | I_H_REG(r1), I_H_REG(r2) ->
                                        instrs1 @ instrs2 @ [ASM_ADD (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                                       [ASM_LI (rs1, i1); ASM_ADDI (rd, rs1, i2)], vrb, I_H_REG(rd)
                                    | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
             | I_LTHAN -> (match ih1, ih2 with
                                    | I_H_REG(r), I_H_IMM(i) ->
                                        instrs1 @ [ASM_SLTI (rd, r, i)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i), I_H_REG(r) ->
-                                       instrs2 @ [ASM_ADDI (rs1, 0, i); ASM_SLT (rd, rs1, r)], vrb, I_H_REG(rd)
+                                       instrs2 @ [ASM_LI (rs1, i); ASM_SLT (rd, rs1, r)], vrb, I_H_REG(rd)
                                    | I_H_REG(r1), I_H_REG(r2) ->
                                        instrs1 @ instrs2 @ [ASM_SLT (rd, r1, r2)], vrb, I_H_REG(rd)
                                    | I_H_IMM(i1), I_H_IMM(i2) ->
-                                       [ASM_ADDI (rs1, 0, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd)
+                                       [ASM_LI (rs1, i1); ASM_SLTI (rd, rs1, i2)], vrb, I_H_REG(rd)
                                    | _, _ -> [], vrb, I_H_NONE ) (* TODO: throw error?? *)
             | _ -> [], vrb, I_H_NONE (* TODO: implement!*)
         )
@@ -82,11 +85,11 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let instr, _, _ = compile (ast, VRB("0_result", rd)::vrb) in (instr, vrb, I_H_NONE) (* list functions as a stack *)
     | EVAL(INT(v)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
-        [ASM_ADDI (rd, 0, v)], vrb, I_H_NONE
+        [ASM_LI (rd, v)], vrb, I_H_NONE
     | EVAL(IDENT(s)), vrb ->
         let rd = vrb_lookup ("0_result", vrb) in
         let rs1 = vrb_lookup (s, vrb) in
-        [ASM_ADDI (rd, rs1, 0)], vrb, I_H_NONE
+        [ASM_MV (rd, rs1)], vrb, I_H_NONE
 
     | IF(INFIX(inf1, op, inf2), ast2, ast3), vrb -> (* special case for infix allows for optimisation! *)
         let instrs2, _, _ = compile(ast2, vrb) in
@@ -99,13 +102,13 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let instrs1_2, _,    ih2 = compile (inf2, VRB("0_result", rs2)::vrb) in
         let instrsB = (match op, ih1, ih2 with
             | I_LTHAN, I_H_REG(r1), I_H_REG(r2) -> [ASM_BGE(r1, r2, else_label)] (* This is the only one of the 4 options that actually yields fewer instructions *)
-            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_ADDI (rs2, 0, i2); ASM_BGE(r1, rs2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_ADDI (rs1, 0, i1); ASM_BGE(rs1, r2, else_label)]
-            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_ADDI (rs1, 0, i1); ASM_ADDI (rs2, 0, i2); ASM_BGE(rs1, rs2, else_label)]
+            | I_LTHAN, I_H_REG(r1), I_H_IMM(i2) -> [ASM_LI (rs2, i2); ASM_BGE(r1, rs2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_REG(r2) -> [ASM_LI (rs1, i1); ASM_BGE(rs1, r2, else_label)]
+            | I_LTHAN, I_H_IMM(i1), I_H_IMM(i2) -> [ASM_LI (rs1, i1); ASM_LI (rs2, i2); ASM_BGE(rs1, rs2, else_label)]
             | _ -> failwith "ERROR: cannot optimise infix if conditional"
         ) in
         instrs1_1 @ instrs1_2 @ instrsB @
-        instrs2 @ [ASM_JAL(0, end_label); ASM_LABEL(else_label)] @
+        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @
         instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
     | IF(ast1, ast2, ast3), vrb -> (* TODO: what happens when if <> then int(2) else int(5)  -  with respect to multiple allowable types! *)
         let VRB(s,rd2) = vrb_assign("0_result", vrb) in
@@ -115,7 +118,7 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
         let else_label = new_label() in
         let end_label = new_label() in
         instrs1 @ [ASM_BEQ(rd2, 0, else_label)] @
-        instrs2 @ [ASM_JAL(0, end_label); ASM_LABEL(else_label)] @
+        instrs2 @ [ASM_J(end_label); ASM_LABEL(else_label)] @
         instrs3 @ [ASM_LABEL(end_label)], vrb, I_H_NONE
         (*
         branch condition = false .else
@@ -134,7 +137,7 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
             let end_label = new_label() in
             [ASM_LABEL(start_label)] @ instrs1 @
             [ASM_BEQ(rd2, 0, end_label)] @ instrs2 @
-            [ASM_JAL(0, start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
+            [ASM_J(start_label); ASM_LABEL(end_label)], vrb, I_H_NONE
             (*
             .start
             branch condition = false .end
@@ -157,6 +160,12 @@ let rec print_asm_helper = function
     | ASM_ADDI(rd, rs1, imm)::t ->
         Printf.printf "addi x%i, x%i, %i\n" rd rs1 imm;
         print_asm_helper t
+    | ASM_MV(rd, rs1)::t ->
+        Printf.printf "mv x%i, x%i\n" rd rs1;
+        print_asm_helper t
+    | ASM_LI(rd, imm)::t ->
+        Printf.printf "li x%i, %i\n" rd imm;
+        print_asm_helper t
     | ASM_ADD(rd, rs1, rs2)::t ->
         Printf.printf "add x%i, x%i, x%i\n" rd rs1 rs2;
         print_asm_helper t
@@ -174,6 +183,9 @@ let rec print_asm_helper = function
         print_asm_helper t
     | ASM_JAL(rd, label)::t ->
         Printf.printf "jal x%i, lab%i\n" rd label;
+        print_asm_helper t
+    | ASM_J(label)::t ->
+        Printf.printf "j lab%i\n" label;
         print_asm_helper t
     | ASM_LABEL(label)::t ->
         Printf.printf "lab%i:\n" label;
