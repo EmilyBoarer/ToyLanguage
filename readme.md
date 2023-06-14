@@ -119,7 +119,7 @@ Used in giving generated errors back to the user
 
 ## MAIN future plan:
 - better errors, that actually tell you what's wrong and where it's wrong
-- 
+- add shifts and bitwise/logical operations
 - add functions
 - sort out pushing some values to the stack when running out of registers to hold data in!!
 - sort out what happens when something can be typed to multiple things

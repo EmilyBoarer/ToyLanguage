@@ -194,16 +194,24 @@ let rec compile = function (* simplified&checked_ast, var/reg bindings, infix_he
 and compile_optimised_infix_conditional vrb rd ast unsatisfied_label = (match ast with
     | INFIX(ast1,I_LTHAN,ast2) ->
         let rs1 = rd in
-        let instrs1, _, _ = compile(ast1, VRB("0_result", rs1)::vrb) in
+        let instrs1, _, ih1 = compile(ast1, VRB("0_result", rs1)::vrb) in
         let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
-        let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
-        instrs1 @ instrs2 @ [ASM_BLT (rs2, rs1, unsatisfied_label)]
+        let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
+        (match ih1 with
+            | I_H_REG_REF(r1) -> (match ih2 with
+                | I_H_REG_REF(r2) -> [ASM_BLT (r2, r1, unsatisfied_label)]
+                | _ -> instrs2 @ [ASM_BLT (rs2, r1, unsatisfied_label)])
+            | _ -> instrs1 @ instrs2 @ [ASM_BLT (rs2, rs1, unsatisfied_label)])
     | INFIX(ast1,I_EQUAL,ast2) ->
         let rs1 = rd in
-        let instrs1, _, _ = compile(ast1, VRB("0_result", rs1)::vrb) in
+        let instrs1, _, ih1 = compile(ast1, VRB("0_result", rs1)::vrb) in
         let VRB(_,rs2) = vrb_assign("0_rs2", vrb) in
-        let instrs2, _, _ = compile(ast2, VRB("0_result", rs2)::vrb) in
-        instrs1 @ instrs2 @ [ASM_BNE(rs1, rs2, unsatisfied_label)]
+        let instrs2, _, ih2 = compile(ast2, VRB("0_result", rs2)::vrb) in
+        (match ih1 with
+            | I_H_REG_REF(r1) -> (match ih2 with
+                | I_H_REG_REF(r2) -> [ASM_BNE(r1, r2, unsatisfied_label)]
+                | _ -> instrs2 @ [ASM_BNE(r1, rs2, unsatisfied_label)])
+            | _ -> instrs1 @ instrs2 @ [ASM_BNE(rs1, rs2, unsatisfied_label)])
     | _ ->
         let rs1 = rd in
         let instrs1, _, _ = compile(ast, vrb) in
